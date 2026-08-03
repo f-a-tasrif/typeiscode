@@ -13,8 +13,8 @@ Layout pattern used by every level ("workshop + corridor"):
   * A 3-tile deep "workshop" room (rows y=1,2,3) is reachable through a
     doorway placed BEFORE the obstacle's column, so there is never a way
     to bypass the obstacle by wandering through the workshop.
-  * Inside the workshop sits a CircuitLine (4 slots: CLASS, PROPERTY,
-    OPERATOR, VALUE) pre-loaded with a statement, plus a spare
+  * Inside the workshop sits a CircuitLine (4 contiguous slots: CLASS,
+    PROPERTY, OPERATOR, VALUE) pre-loaded with a statement, plus a spare
     correction block with ample clearance (at least 1 empty grid space
     on surrounding sides) to be pushed Sokoban-style into the slot.
 """
@@ -49,12 +49,12 @@ def build_level1() -> Level:
 
     lvl.add_object(Platform(9, 5))
 
-    slots = [(4, 2), (6, 2), (8, 2), (11, 2)]
+    slots = [(4, 2), (5, 2), (6, 2), (7, 2)]
     lvl.add_circuit(CircuitLine("Bridge Statement", slots))
     lvl.add_object(CodeBlock(4, 2, CLASS, "Platform"))
-    lvl.add_object(CodeBlock(6, 2, PROP, "isSolid"))
-    lvl.add_object(CodeBlock(8, 2, OP, "="))
-    lvl.add_object(CodeBlock(11, 2, VALUE, True))  # current state: solid/blocking
+    lvl.add_object(CodeBlock(5, 2, PROP, "isSolid"))
+    lvl.add_object(CodeBlock(6, 2, OP, "="))
+    lvl.add_object(CodeBlock(7, 2, VALUE, True))  # current state: solid/blocking
 
     lvl.add_object(CodeBlock(9, 2, VALUE, False))  # spare correction block to make it false (passable)
 
@@ -80,14 +80,14 @@ def build_level2() -> Level:
 
     lvl.add_object(Door(9, 5))
 
-    slots = [(4, 2), (6, 2), (8, 2), (11, 2)]
+    slots = [(4, 2), (5, 2), (6, 2), (7, 2)]
     lvl.add_circuit(CircuitLine("Door Statement", slots))
     lvl.add_object(CodeBlock(4, 2, CLASS, "Door"))
-    lvl.add_object(CodeBlock(6, 2, PROP, "isOpen"))
-    lvl.add_object(CodeBlock(8, 2, OP, "="))
-    lvl.add_object(CodeBlock(11, 2, VALUE, False))  # wrong -- needs to be True
+    lvl.add_object(CodeBlock(5, 2, PROP, "isOpen"))
+    lvl.add_object(CodeBlock(6, 2, OP, "="))
+    lvl.add_object(CodeBlock(7, 2, VALUE, False))  # wrong -- needs to be True
 
-    lvl.add_object(CodeBlock(2, 2, VALUE, True))  # spare correction block, kept separate
+    lvl.add_object(CodeBlock(9, 2, VALUE, True))  # spare correction block, kept separate
 
     lvl.recompile_circuits()
     return lvl
@@ -123,24 +123,24 @@ def build_level3() -> Level:
     lvl.add_object(Platform(obstacleB, 5))
 
     # Trap circuit in workshop A
-    slotsA = [(4, 2), (6, 2), (8, 2), (11, 2)]
+    slotsA = [(4, 2), (5, 2), (6, 2), (7, 2)]
     circA = CircuitLine("Trap Statement", slotsA)
     lvl.add_circuit(circA)
     lvl.add_object(CodeBlock(4, 2, CLASS, "Trap"))
-    lvl.add_object(CodeBlock(6, 2, PROP, "isLethal"))
-    lvl.add_object(CodeBlock(8, 2, OP, "="))
-    lvl.add_object(CodeBlock(11, 2, VALUE, True))    # wrong -- needs False
-    lvl.add_object(CodeBlock(2, 2, VALUE, False))   # spare correction block
+    lvl.add_object(CodeBlock(5, 2, PROP, "isLethal"))
+    lvl.add_object(CodeBlock(6, 2, OP, "="))
+    lvl.add_object(CodeBlock(7, 2, VALUE, True))    # wrong -- needs False
+    lvl.add_object(CodeBlock(9, 2, VALUE, False))   # spare correction block
 
     # Bridge circuit in workshop B
-    slotsB = [(16, 2), (18, 2), (20, 2), (23, 2)]
+    slotsB = [(16, 2), (17, 2), (18, 2), (19, 2)]
     circB = CircuitLine("Bridge Statement", slotsB)
     lvl.add_circuit(circB)
     lvl.add_object(CodeBlock(16, 2, CLASS, "Platform"))
-    lvl.add_object(CodeBlock(18, 2, PROP, "isSolid"))
-    lvl.add_object(CodeBlock(20, 2, OP, "="))
-    lvl.add_object(CodeBlock(23, 2, VALUE, True))   # wrong -- needs False
-    lvl.add_object(CodeBlock(14, 2, VALUE, False))  # spare correction block
+    lvl.add_object(CodeBlock(17, 2, PROP, "isSolid"))
+    lvl.add_object(CodeBlock(18, 2, OP, "="))
+    lvl.add_object(CodeBlock(19, 2, VALUE, True))   # wrong -- needs False
+    lvl.add_object(CodeBlock(21, 2, VALUE, False))  # spare correction block
 
     lvl.recompile_circuits()
     return lvl
