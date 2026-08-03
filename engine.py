@@ -39,16 +39,17 @@ class GameEngine:
 
     def next_level(self) -> bool:
         """Advance to the next level. Returns False if the game is finished."""
-        self.level_index += 1
-        if self.level_index >= len(ALL_LEVELS):
+        if self.level_index + 1 >= len(ALL_LEVELS):
             return False
+        self.level_index += 1
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
         return True
 
     def render_frame(self, message: str = ""):
         print("\n" * 2)
-        print(f"=== TYPE IS CODE ===  Level {self.level_index + 1}/{len(ALL_LEVELS)}: {self.level.name}")
+        lvl_num = min(self.level_index + 1, len(ALL_LEVELS))
+        print(f"=== TYPE IS CODE ===  Level {lvl_num}/{len(ALL_LEVELS)}: {self.level.name}")
         print(f"Moves: {self.level.moves}")
         print()
         print(self.level.render())

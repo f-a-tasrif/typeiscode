@@ -39,6 +39,7 @@ SYMBOL_STYLE = {
 class GUIEngine:
     def __init__(self):
         self.level_index = 0
+        self.game_completed = False
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
         self.window = Window("Type Is Code", 1180, 580, bg=BACKGROUND)
@@ -60,14 +61,18 @@ class GUIEngine:
     def current_builder(self):
         return ALL_LEVELS[self.level_index]
 
-    def restart_level(self):
+    def restart_level(self, from_start: bool = False):
+        if from_start or self.game_completed:
+            self.level_index = 0
+            self.game_completed = False
         self.level = self.current_builder()()
         self.level.reset()
 
     def next_level(self) -> bool:
-        self.level_index += 1
-        if self.level_index >= len(ALL_LEVELS):
+        if self.level_index + 1 >= len(ALL_LEVELS):
+            self.game_completed = True
             return False
+        self.level_index += 1
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
         return True
@@ -154,7 +159,12 @@ class GUIEngine:
                 self.canvas.draw_rect(px, py, cell_size - 2, cell_size - 2, fill=fill, outline=SEPARATOR_COLOR)
                 self.canvas.draw_text(px + cell_size // 2, py + cell_size // 2, glyph, fill=glyph_color, anchor="c")
 
-        self.status_label.configure(text=f"Level {self.level_index + 1}/{len(ALL_LEVELS)}: {self.level.name}")
+        lvl_num = min(self.level_index + 1, len(ALL_LEVELS))
+        if self.game_completed:
+            self.status_label.configure(text=f"=== GAME COMPLETE! === Level {lvl_num}/{len(ALL_LEVELS)} Solved")
+        else:
+            self.status_label.configure(text=f"Level {lvl_num}/{len(ALL_LEVELS)}: {self.level.name}")
+
         self.moves_label.configure(text=f"Moves: {self.level.moves}")
         self.message_label.configure(text=message or "Ready for your next move.")
         self.circuit_view.set_text(self.level.render_circuits())
@@ -177,19 +187,24 @@ class GUIEngine:
             self.render_frame("Press H to show help. Use arrow keys W/A/S/D.")
             return
         if key == "r":
-            self.restart_level()
-            self.render_frame("Level restarted.")
+            from_start = self.game_completed
+            self.restart_level(from_start=from_start)
+            msg = "Game restarted from Level 1." if from_start else "Level restarted."
+            self.render_frame(msg)
             return
         if key not in ("w", "a", "s", "d"):
             return
 
+        if self.game_completed:
+            self.render_frame("Game complete! All levels solved. Press R to restart from Level 1, or Q to quit.")
+            return
+
         msg = self.level.move_player(key)
         if self.level.won:
-            self.render_frame(msg + " You solved the level!")
             if not self.next_level():
-                self.render_frame("Congratulations! You completed all levels.")
+                self.render_frame("Congratulations! You completed all levels! Press R to restart or Q to quit.")
                 return
-            self.render_frame("New level loaded.")
+            self.render_frame("Level solved! New level loaded.")
             return
         if self.level.dead:
             self.render_frame(msg + " Game over. Press R to restart.")
