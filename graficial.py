@@ -100,7 +100,9 @@ class Canvas:
                                  anchor=anchor, font=default_font)
 
     def get_size(self) -> tuple[int, int]:
-        self._canvas.update_idletasks()
+        # Do not flush idle drawing work here.  The game clears and redraws
+        # this canvas in one render pass; forcing Tk to process idle tasks
+        # between those steps briefly presents the empty canvas as a flash.
         return self._canvas.winfo_width(), self._canvas.winfo_height()
 
     def set_size(self, width: int, height: int):
