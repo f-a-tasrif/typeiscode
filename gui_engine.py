@@ -17,7 +17,7 @@ from tile_renderer import (
     draw_platform_solid, draw_platform_ghost,
     draw_door_closed, draw_door_open,
     draw_trap_lethal, draw_trap_safe,
-    draw_code_block, draw_circuit_slot,
+    draw_code_block,
 )
 
 # ── colour tokens (info-panel only) ─────────────────────────────────
@@ -138,12 +138,6 @@ class GUIEngine:
                              ox + board_w + 3, oy + board_h + 3,
                              fill="", outline=BOARD_BORDER, width=2)
 
-        # gather circuit slot positions for highlighting
-        circuit_slots = set()
-        for circ in self.level.circuits:
-            for sp in circ.slot_positions:
-                circuit_slots.add(sp)
-
         # ── draw every cell ──
         for gy in range(rows):
             for gx in range(cols):
@@ -157,8 +151,6 @@ class GUIEngine:
                     draw_wall(raw, px, py, cell)
                 elif tile_cls == "Goal":
                     draw_goal(raw, px, py, cell)
-                elif (gx, gy) in circuit_slots:
-                    draw_circuit_slot(raw, px, py, cell)
                 else:
                     draw_floor(raw, px, py, cell)
 

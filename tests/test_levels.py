@@ -40,6 +40,29 @@ class TestLevels(unittest.TestCase):
         PropertyRegistry.set("Door", "isOpen", True)
         self.assertFalse(door.is_blocking())
 
+    def test_statement_can_compile_away_from_highlight_and_reverts_when_broken(self):
+        lvl = build_level2()
+        door = [o for o in lvl.dynamic_objects if isinstance(o, Door)][0]
+        blocks = [obj for obj in lvl.dynamic_objects if isinstance(obj, CodeBlock)]
+
+        # Assemble Door.isOpen = true away from the highlighted slots.
+        class_block = next(obj for obj in blocks if obj.kind == "CLASS")
+        prop_block = next(obj for obj in blocks if obj.kind == "PROP")
+        op_block = next(obj for obj in blocks if obj.kind == "OP")
+        true_block = next(obj for obj in blocks if obj.kind == "VALUE" and obj.value is True)
+        for block, x in zip((class_block, prop_block, op_block, true_block), range(9, 13)):
+            block.x, block.y = x, 3
+        lvl.recompile_circuits()
+        self.assertFalse(door.is_blocking())
+
+        # Breaking the live statement closes the door; restoring it reopens it.
+        true_block.x, true_block.y = 13, 3
+        lvl.recompile_circuits()
+        self.assertTrue(door.is_blocking())
+        true_block.x, true_block.y = 12, 3
+        lvl.recompile_circuits()
+        self.assertFalse(door.is_blocking())
+
     def test_trap_is_lethal_live_update(self):
         lvl = build_level3()
         trap = [o for o in lvl.dynamic_objects if isinstance(o, Trap)][0]

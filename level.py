@@ -88,6 +88,11 @@ class Level:
 
     # -- core game loop ---------------------------------------------------
     def recompile_circuits(self):
+        # Compilation is a projection of the *current* board, not a one-way
+        # mutation.  Start from the level defaults every time so breaking a
+        # statement immediately restores its wall/path behaviour and a later
+        # valid statement can compile again.
+        PropertyRegistry.reset(self.initial_registry)
         bpos = self.blocks_by_pos()
         for c in self.circuits:
             c.try_compile(bpos)

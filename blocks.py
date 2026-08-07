@@ -76,6 +76,10 @@ class CircuitLine:
         self.name = name
         self.slot_positions = slot_positions
         self.last_result = None  # human readable string of last compile
+        # The highlighted slots identify which property this circuit controls,
+        # but do not constrain where the player can assemble the statement.
+        # It is learned from the line's initial, well-formed statement.
+        self.bound_target: tuple[object, object] | None = None
 
     def slot_kind(self, index: int) -> str:
         return (CLASS, PROP, OP, VALUE)[index]
@@ -90,19 +94,18 @@ class CircuitLine:
         """
         expected_kinds = (CLASS, PROP, OP, VALUE)
 
-        # 1. Check explicit slot_positions
+        # Learn this circuit's target from its original highlighted statement.
+        # After that, the same statement can be assembled anywhere on the board.
         slots = [blocks_by_pos.get(pos) for pos in self.slot_positions]
         if not any(b is None for b in slots):
             if all(b.kind == k for b, k in zip(slots, expected_kinds)) and slots[2].value == "=":
-                class_tok, prop_tok, op_tok, value_tok = slots
-                changed = PropertyRegistry.set(class_tok.value, prop_tok.value, value_tok.value)
-                self.last_result = f"{class_tok.value}.{prop_tok.value} = {value_tok.value}"
-                return changed
+                self.bound_target = (slots[0].value, slots[1].value)
 
-        # 2. Scan row y of slot_positions for any contiguous 4 blocks matching (CLASS, PROP, OP, VALUE)
-        if self.slot_positions:
-            y = self.slot_positions[0][1]
-            row_x_coords = sorted(x for (x, by) in blocks_by_pos.keys() if by == y)
+        # Scan every row: highlighted cells are visual guidance only, not a
+        # requirement for compiling.  Statements remain left-to-right.
+        rows = sorted({y for _, y in blocks_by_pos})
+        for y in rows:
+            row_x_coords = sorted(x for (x, by) in blocks_by_pos if by == y)
             for x in row_x_coords:
                 b0 = blocks_by_pos.get((x, y))
                 b1 = blocks_by_pos.get((x + 1, y))
@@ -114,13 +117,14 @@ class CircuitLine:
                     b2 and b2.kind == OP and b2.value == "=" and
                     b3 and b3.kind == VALUE
                 ):
+                    if self.bound_target and (b0.value, b1.value) != self.bound_target:
+                        continue
                     changed = PropertyRegistry.set(b0.value, b1.value, b3.value)
                     self.last_result = f"{b0.value}.{b1.value} = {b3.value}"
                     return changed
 
         # Check for syntax error vs incomplete
-        if self.slot_positions:
-            y = self.slot_positions[0][1]
+        for y in rows:
             row_blocks = [b for (x, by), b in blocks_by_pos.items() if by == y]
             if len(row_blocks) >= 4:
                 self.last_result = "SYNTAX ERROR"
