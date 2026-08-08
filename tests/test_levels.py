@@ -18,6 +18,21 @@ class TestLevels(unittest.TestCase):
         self.assertEqual(len(positions), len(value_blocks))
         self.assertEqual({obj.value for obj in value_blocks}, {False, True})
 
+    def test_adjacent_blocks_do_not_chain_push(self):
+        lvl = build_level1()
+        blocks = [obj for obj in lvl.dynamic_objects if isinstance(obj, CodeBlock)]
+        first, second = blocks[:2]
+        first.x, first.y = 3, 2
+        second.x, second.y = 4, 2
+        lvl.set_player(2, 2)
+
+        message = lvl.move_player("d")
+
+        self.assertEqual(message, "Can't push -- something is already there.")
+        self.assertEqual((first.x, first.y), (3, 2))
+        self.assertEqual((second.x, second.y), (4, 2))
+        self.assertEqual((lvl.player.x, lvl.player.y), (2, 2))
+
     def test_platform_solidity_live_update(self):
         lvl = build_level1()
         platform = [o for o in lvl.dynamic_objects if isinstance(o, Platform)][0]

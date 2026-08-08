@@ -114,9 +114,9 @@ class Level:
         occ = self.object_at(nx, ny)
         if occ is not None:
             if isinstance(occ, CodeBlock):
-                # try to push it; if the destination is occupied by another
-                # movable block, allow the push only when the block can slide
-                # into the next cell as a swap.
+                # A push only moves the block directly in front of the player.
+                # Blocks cannot be chain-pushed: an occupied destination stops
+                # the move, keeping adjacent blocks independent.
                 bx, by = nx + dx, ny + dy
                 if not (0 <= bx < self.width and 0 <= by < self.height):
                     return "Can't push that off the grid."
@@ -125,16 +125,7 @@ class Level:
                     return "Can't push -- wall behind the block."
                 target = self.object_at(bx, by)
                 if target is not None:
-                    if isinstance(target, CodeBlock):
-                        if not (0 <= bx + dx < self.width and 0 <= by + dy < self.height):
-                            return "Can't push -- blocked by the edge."
-                        if isinstance(self.tile_at(bx + dx, by + dy), Wall):
-                            return "Can't push -- wall behind the block."
-                        if self.object_at(bx + dx, by + dy) is not None:
-                            return "Can't push -- something is already there."
-                        target.x, target.y = bx + dx, by + dy
-                    else:
-                        return "Can't push -- something is already there."
+                    return "Can't push -- something is already there."
                 occ.x, occ.y = bx, by
                 self.player.x, self.player.y = nx, ny
                 self.moves += 1
