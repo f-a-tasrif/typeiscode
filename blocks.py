@@ -30,7 +30,7 @@ VALUE = "VALUE"
 
 # how each (kind, value) pair is rendered as a 4-char glyph
 _GLYPHS = {
-    ("CLASS", "Platform"): "Plat.",
+    ("CLASS", "Platform"): "Path.",
     ("CLASS", "Wall"): "Wall.",
     ("CLASS", "Door"): "Door.",
     ("CLASS", "Trap"): "Trap.",
@@ -66,7 +66,7 @@ class CodeBlock(GameObject):
         return f"CodeBlock({self.kind}={self.value} @ {self.x},{self.y})"
 
 
-# The `Plat.` class token and the `open` property token are the two halves
+# The `Path.` class token and the `open` property token are the two halves
 # of a "goal seed": press one into the other -- horizontally or vertically,
 # in either order -- MERGE_PRESS_TIMES times in a row and they fuse into a
 # brand-new Goal tile (see Level._press_merge).
@@ -75,14 +75,14 @@ MERGE_TOKENS: set[tuple[str, object]] = {("CLASS", "Platform"), ("PROP", "isOpen
 
 
 def is_merge_pair(a, b) -> bool:
-    """True when `a` and `b` are the Plat./open pair, orthogonally adjacent."""
+    """True when `a` and `b` are the Path./open pair, orthogonally adjacent."""
     if not (isinstance(a, CodeBlock) and isinstance(b, CodeBlock)):
         return False
     # Only horizontal or vertical neighbours can press into each other.
     if abs(a.x - b.x) + abs(a.y - b.y) != 1:
         return False
-    # Set equality makes the check order-agnostic: Plat.-then-open and
-    # open-then-Plat both count.
+    # Set equality makes the check order-agnostic: Path.-then-open and
+    # open-then-Path both count.
     return {(a.kind, a.value), (b.kind, b.value)} == MERGE_TOKENS
 
 
