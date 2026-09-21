@@ -83,6 +83,20 @@ brief:
 2. **Open Sesame** — introduces Door; open it to pass.
 3. **Two Statements** — disarm a Trap, then solidify a Platform, to
    reach the goal.
+4. **Spacious Statements** — two tall workshops, a corridor whose GOAL is
+   sealed behind a booby-trapped wall, and the token-fusion trick
+   described below.
+
+## Fusing tokens into a new GOAL (Level 4)
+
+Push the `Plat.` class token (second workshop) into the `open` property
+token (first workshop) — or `open` into `Plat.` — horizontally or
+vertically. Each shove counts as a **press** (the tokens don't go
+anywhere, since blocks are never chain-pushed); after **3 presses** both
+tokens are consumed and a brand-new `GOAL` tile blooms right in front of
+you. The new flag replaces the old one: level 4's original corridor
+`GOAL` vanishes the moment the fusion completes, so only one flag exists
+at a time. Move either token and the press counter resets.
 
 ## Extending the game
 

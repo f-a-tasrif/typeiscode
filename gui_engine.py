@@ -210,7 +210,8 @@ class GUIEngine:
             "R = restart level\n"
             "Q = quit\n\n"
             "Push code blocks onto the circuit line so\n"
-            "the statement compiles.  CLASS PROP = VALUE"
+            "the statement compiles.  CLASS PROP = VALUE\n"
+            "Press Plat.+open together 3x = new GOAL"
         )
 
     # ── input ───────────────────────────────────────────────────────

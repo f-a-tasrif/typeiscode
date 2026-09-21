@@ -66,6 +66,26 @@ class CodeBlock(GameObject):
         return f"CodeBlock({self.kind}={self.value} @ {self.x},{self.y})"
 
 
+# The `Plat.` class token and the `open` property token are the two halves
+# of a "goal seed": press one into the other -- horizontally or vertically,
+# in either order -- MERGE_PRESS_TIMES times in a row and they fuse into a
+# brand-new Goal tile (see Level._press_merge).
+MERGE_PRESS_TIMES = 3
+MERGE_TOKENS: set[tuple[str, object]] = {("CLASS", "Platform"), ("PROP", "isOpen")}
+
+
+def is_merge_pair(a, b) -> bool:
+    """True when `a` and `b` are the Plat./open pair, orthogonally adjacent."""
+    if not (isinstance(a, CodeBlock) and isinstance(b, CodeBlock)):
+        return False
+    # Only horizontal or vertical neighbours can press into each other.
+    if abs(a.x - b.x) + abs(a.y - b.y) != 1:
+        return False
+    # Set equality makes the check order-agnostic: Plat.-then-open and
+    # open-then-Plat both count.
+    return {(a.kind, a.value), (b.kind, b.value)} == MERGE_TOKENS
+
+
 class CircuitLine:
     """
     A compiler strip made of 4 fixed grid coordinates. Every tick, the

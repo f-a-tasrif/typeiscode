@@ -20,7 +20,7 @@ Layout pattern used by every level ("workshop + corridor"):
 """
 
 from level import Level
-from game_object import Platform, Door, Trap, HiddenBoom
+from game_object import Platform, Door, Trap, HiddenBoom, BorderMine
 from blocks import CodeBlock, CircuitLine, CLASS, PROP, OP, VALUE
 
 DEFAULT_REGISTRY = {
@@ -155,6 +155,14 @@ def build_level4() -> Level:
     around, and re-arranged freely before being slotted in.  Both
     statements still need fixing: Door.isOpen = true and
     Platform.isSolid = false.
+
+    The bottom wall of the second workshop is mined exactly like the
+    outer border (BorderMine inside every wall cell), so even
+    Wall.solid = False cannot walk through it.  That seals off the
+    original corridor GOAL -- its only safe approach is wall cell
+    (26, 9) -- so the level is finished by fusing a new GOAL from the
+    Plat. and open tokens; the original flag disappears the moment the
+    new one blooms (only one flag exists at a time).
     """
     W, H = 28, 12
     lvl = Level("4 - Spacious Statements", W, H, DEFAULT_REGISTRY)
@@ -169,6 +177,14 @@ def build_level4() -> Level:
     for x in range(1, W - 1):
         if x not in (doorA, doorB):
             lvl.add_wall(x, 9)
+
+    # The bottom wall of the second workshop gets BorderMine booms inside
+    # its cells, same as the outer wall: with Wall.solid = False the player
+    # still dies trying to walk through it, and blocks can't be pushed into
+    # it either.  Leaves the doorway at doorB open.
+    for x in range(13, W - 1):
+        if x != doorB:
+            lvl.add_object(BorderMine(x, 9))
 
     # dividing wall between workshop rooms, now spanning the taller room
     for y in range(1, 9):

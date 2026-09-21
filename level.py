@@ -11,7 +11,7 @@ cell beyond it is free); if a Platform/Door/Trap is in the way its
 
 from __future__ import annotations
 from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine
-from blocks import CodeBlock, CircuitLine
+from blocks import CodeBlock, CircuitLine, is_merge_pair, MERGE_PRESS_TIMES
 from registry import PropertyRegistry
 
 DIRS = {
@@ -44,6 +44,10 @@ class Level:
         self.won = False
         self.dead = False
         self.moves = 0
+
+        # Fusion progress for the Plat./open pair:
+        # (id of block A, id of block B) -> presses so far.
+        self.press_counts: dict[tuple[int, int], int] = {}
 
     # -- level construction helpers -----------------------------------
     def add_wall_border(self):
@@ -135,8 +139,14 @@ class Level:
                     return "Can't push -- wall behind the block."
                 target = self.object_at(bx, by)
                 if target is not None:
+                    # Shoving the Plat./open pair into each other (either
+                    # order, horizontally or vertically) is a *press*:
+                    # after MERGE_PRESS_TIMES presses they fuse into a Goal.
+                    if is_merge_pair(occ, target):
+                        return self._press_merge(occ, target)
                     return "Can't push -- something is already there."
                 occ.x, occ.y = bx, by
+                self._clear_presses_for(occ)
                 self.player.x, self.player.y = nx, ny
                 self.moves += 1
                 self.recompile_circuits()
@@ -161,6 +171,58 @@ class Level:
             return "You reached the goal! Level complete."
 
         return ""
+
+    def _clear_presses_for(self, block: CodeBlock) -> None:
+        """Forget fusion progress involving `block` as soon as it moves on."""
+        bid = id(block)
+        for key in [k for k in self.press_counts if bid in k]:
+            del self.press_counts[key]
+
+    def _press_merge(self, pushed: CodeBlock, pressed: CodeBlock) -> str:
+        """
+        The player shoved `pushed` straight into `pressed`; neither token can
+        go anywhere (blocks are never chain-pushed), so the shove is counted
+        as a *press*.  Pressing the Plat./open pair into each other -- either
+        order, horizontally or vertically -- MERGE_PRESS_TIMES times in a row
+        consumes both tokens, removes any pre-existing goal (there is only
+        ever one flag), and blooms a brand-new Goal tile on the cell the
+        player was pushing into.
+        """
+        key = tuple(sorted((id(pushed), id(pressed))))
+        count = self.press_counts.get(key, 0) + 1
+        names = f"{pushed.glyph().strip()} + {pressed.glyph().strip()}"
+
+        if count < MERGE_PRESS_TIMES:
+            self.press_counts[key] = count
+            if count == 1:
+                return (f"{names} grind together... ({count}/{MERGE_PRESS_TIMES}) "
+                        f"Press them into each other {MERGE_PRESS_TIMES} times "
+                        f"to fuse a new GOAL!")
+            return f"{names} grind together... ({count}/{MERGE_PRESS_TIMES}) One more press!"
+
+        # Final press: both tokens are consumed and the new goal blooms
+        # right in front of the player.  There is only ever one flag: any
+        # pre-existing goal (level 4's original corridor GOAL) vanishes
+        # at the same moment.
+        gx, gy = pushed.x, pushed.y
+        self.dynamic_objects = [
+            o for o in self.dynamic_objects
+            if o is not pushed and o is not pressed
+        ]
+        replaced = False
+        for (tx, ty), tile in list(self.tiles.items()):
+            if isinstance(tile, Goal) and (tx, ty) != (gx, gy):
+                self.tiles[(tx, ty)] = Floor(tx, ty)
+                replaced = True
+        self.tiles[(gx, gy)] = Goal(gx, gy)
+        self._clear_presses_for(pushed)
+        self._clear_presses_for(pressed)
+        self.recompile_circuits()
+        msg = f"{names} fuse together!"
+        if replaced:
+            msg += "  The original GOAL vanishes."
+        msg += f"  A new GOAL appears at ({gx}, {gy}) -- step onto it to win."
+        return msg
 
     def is_over(self) -> bool:
         return self.won or self.dead
@@ -199,4 +261,5 @@ class Level:
 
     def reset(self):
         PropertyRegistry.reset(self.initial_registry)
+        self.press_counts.clear()
         self.recompile_circuits()
