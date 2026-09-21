@@ -9,7 +9,10 @@ Requires Python 3.10+ (uses `X | None` type hints), no third-party
 dependencies.
 
 ```bash
-python3 main.py
+python3 main.py                 # start at level 1
+python3 main.py --level 4       # start directly at level 4
+python3 main.py -l 2            # short form
+python3 main.py --list          # list available levels
 ```
 
 ## Controls

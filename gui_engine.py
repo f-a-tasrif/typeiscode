@@ -17,6 +17,7 @@ from tile_renderer import (
     draw_platform_solid, draw_platform_ghost,
     draw_door_closed, draw_door_open,
     draw_trap_lethal, draw_trap_safe,
+    draw_boom_explosion,
     draw_code_block,
 )
 
@@ -39,8 +40,10 @@ BOARD_PADDING  = 8
 
 class GUIEngine:
     # ── construction ────────────────────────────────────────────────
-    def __init__(self):
-        self.level_index = 0
+    def __init__(self, start_index: int = 0):
+        if not 0 <= start_index < len(ALL_LEVELS):
+            raise ValueError(f"Invalid start_index {start_index}. Choose 0-{len(ALL_LEVELS) - 1}.")
+        self.level_index = start_index
         self.game_completed = False
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
@@ -146,7 +149,7 @@ class GUIEngine:
                 tile = self.level.tile_at(gx, gy)
                 tile_cls = tile.__class__.__name__
 
-                # 1. background tile
+                # 1. background tile — walls always look the same, passable or not
                 if tile_cls == "Wall":
                     draw_wall(raw, px, py, cell)
                 elif tile_cls == "Goal":
@@ -156,14 +159,16 @@ class GUIEngine:
 
                 # 2. dynamic object on top
                 occ = self.level.object_at(gx, gy)
+                cls = occ.__class__.__name__ if occ is not None else ""
                 is_player = (self.level.player and
                              self.level.player.x == gx and
                              self.level.player.y == gy)
 
-                if is_player:
+                if is_player and self.level.dead and cls in ("HiddenBoom", "BorderMine"):
+                    draw_boom_explosion(raw, px, py, cell)
+                elif is_player:
                     draw_player(raw, px, py, cell)
                 elif occ is not None:
-                    cls = occ.__class__.__name__
                     if cls == "Platform":
                         if occ.is_blocking():
                             draw_platform_solid(raw, px, py, cell)

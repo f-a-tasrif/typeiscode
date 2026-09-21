@@ -1,7 +1,7 @@
-from levels_data import build_level1, build_level2, build_level3
+from levels_data import build_level1, build_level2, build_level3, build_level4
 from blocks import CodeBlock
 
-for lvl in [build_level1(), build_level2(), build_level3()]:
+for lvl in [build_level1(), build_level2(), build_level3(), build_level4()]:
     print('LEVEL', lvl.name)
     for y in range(lvl.height):
         row = ''

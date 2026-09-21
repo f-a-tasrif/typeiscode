@@ -41,6 +41,10 @@ TRAP_RED       = "#c74555"
 TRAP_SPIKE     = "#e05565"
 TRAP_SAFE      = "#6d5060"
 TRAP_SAFE_LINE = "#8d7080"
+EXPLOSION_CORE = "#fff08a"
+EXPLOSION_FIRE = "#ff9d2e"
+EXPLOSION_EDGE = "#e34b3e"
+FRAGMENT_COLOR = "#f4f874"
 BLOCK_BG       = "#1a3a6a"
 BLOCK_BORDER   = "#42a7ff"
 BLOCK_TEXT     = "#e8f0ff"
@@ -162,6 +166,38 @@ def draw_player(canvas: tk.Canvas, x: int, y: int, size: int):
     hy = cy - r // 3
     canvas.create_oval(hx - hr, hy - hr, hx + hr, hy + hr,
                        fill="#fffff0", outline="#fffff0")
+
+
+def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int):
+    """A blast cloud and scattered character fragments after the hidden boom fires."""
+    draw_floor(canvas, x, y, size)
+    cx, cy = x + size // 2, y + size // 2
+    outer = max(7, size // 2 - 2)
+    inner = max(4, size // 4)
+
+    # Jagged fireball.
+    points = []
+    for index in range(16):
+        angle = math.tau * index / 16 - math.pi / 2
+        radius = outer if index % 2 == 0 else max(inner + 2, outer * 3 // 5)
+        points.extend((cx + int(math.cos(angle) * radius),
+                       cy + int(math.sin(angle) * radius)))
+    canvas.create_polygon(points, fill=EXPLOSION_EDGE, outline="#ffd45a", width=max(1, size // 22))
+    canvas.create_oval(cx - inner, cy - inner, cx + inner, cy + inner,
+                       fill=EXPLOSION_FIRE, outline=EXPLOSION_CORE, width=max(1, size // 24))
+    core = max(2, inner // 2)
+    canvas.create_oval(cx - core, cy - core, cx + core, cy + core,
+                       fill=EXPLOSION_CORE, outline=EXPLOSION_CORE)
+
+    # The yellow fragments make the character visibly break apart.
+    fragment = max(2, size // 11)
+    for dx, dy in ((-0.34, -0.31), (0.31, -0.25), (-0.38, 0.29), (0.35, 0.33)):
+        fx, fy = cx + int(size * dx), cy + int(size * dy)
+        canvas.create_polygon(fx, fy - fragment,
+                              fx + fragment, fy,
+                              fx, fy + fragment,
+                              fx - fragment, fy,
+                              fill=FRAGMENT_COLOR, outline=PLAYER_OUTLINE)
 
 
 def draw_platform_solid(canvas: tk.Canvas, x: int, y: int, size: int):

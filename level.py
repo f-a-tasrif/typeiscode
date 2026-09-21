@@ -10,7 +10,7 @@ cell beyond it is free); if a Platform/Door/Trap is in the way its
 """
 
 from __future__ import annotations
-from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap
+from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine
 from blocks import CodeBlock, CircuitLine
 from registry import PropertyRegistry
 
@@ -47,12 +47,19 @@ class Level:
 
     # -- level construction helpers -----------------------------------
     def add_wall_border(self):
+        seen = set()
         for x in range(self.width):
-            self.tiles[(x, 0)] = Wall(x, 0)
-            self.tiles[(x, self.height - 1)] = Wall(x, self.height - 1)
+            for y in (0, self.height - 1):
+                self.tiles[(x, y)] = Wall(x, y)
+                if (x, y) not in seen:
+                    seen.add((x, y))
+                    self.dynamic_objects.append(BorderMine(x, y))
         for y in range(self.height):
-            self.tiles[(0, y)] = Wall(0, y)
-            self.tiles[(self.width - 1, y)] = Wall(self.width - 1, y)
+            for x in (0, self.width - 1):
+                self.tiles[(x, y)] = Wall(x, y)
+                if (x, y) not in seen:
+                    seen.add((x, y))
+                    self.dynamic_objects.append(BorderMine(x, y))
 
     def add_wall(self, x, y):
         self.tiles[(x, y)] = Wall(x, y)
@@ -95,7 +102,10 @@ class Level:
         PropertyRegistry.reset(self.initial_registry)
         bpos = self.blocks_by_pos()
         for c in self.circuits:
-            c.try_compile(bpos)
+            c.learn_target(bpos)
+        owned = {c.bound_target for c in self.circuits if c.bound_target}
+        for c in self.circuits:
+            c.try_compile(bpos, owned_targets=owned)
 
     def move_player(self, direction: str) -> str:
         """Attempt to move the player. Returns a short status message."""
@@ -108,7 +118,7 @@ class Level:
             return "You can't leave the grid."
 
         tile = self.tile_at(nx, ny)
-        if isinstance(tile, Wall):
+        if isinstance(tile, Wall) and tile.is_blocking():
             return "A wall blocks the way."
 
         occ = self.object_at(nx, ny)
@@ -121,7 +131,7 @@ class Level:
                 if not (0 <= bx < self.width and 0 <= by < self.height):
                     return "Can't push that off the grid."
                 beyond_tile = self.tile_at(bx, by)
-                if isinstance(beyond_tile, Wall):
+                if isinstance(beyond_tile, Wall) and beyond_tile.is_blocking():
                     return "Can't push -- wall behind the block."
                 target = self.object_at(bx, by)
                 if target is not None:
@@ -139,6 +149,8 @@ class Level:
                 self.moves += 1
                 if occ.is_lethal():
                     self.dead = True
+                    if isinstance(occ, (HiddenBoom, BorderMine)):
+                        return "BOOM! The hidden explosive burst and blew you to pieces!"
                     return "You stepped on a live trap! Game over."
         else:
             self.player.x, self.player.y = nx, ny

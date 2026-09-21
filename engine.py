@@ -26,8 +26,10 @@ How to win:
 
 
 class GameEngine:
-    def __init__(self):
-        self.level_index = 0
+    def __init__(self, start_index: int = 0):
+        if not 0 <= start_index < len(ALL_LEVELS):
+            raise ValueError(f"Invalid start_index {start_index}. Choose 0-{len(ALL_LEVELS) - 1}.")
+        self.level_index = start_index
         self.level = ALL_LEVELS[self.level_index]()
 
     def current_builder(self):

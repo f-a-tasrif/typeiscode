@@ -56,11 +56,11 @@ class GameObject:
 
 
 class Wall(GameObject):
-    """Immovable, always-solid boundary."""
+    """A boundary tile whose solidity is controlled by Wall.solid."""
     GLYPH = "####"
 
     def is_blocking(self) -> bool:
-        return True
+        return bool(PropertyRegistry.get("Wall", "solid", True))
 
 
 class Floor(GameObject):
@@ -131,3 +131,31 @@ class Trap(GameObject):
 
     def glyph(self) -> str:
         return self.GLYPH_ON if self.is_lethal() else self.GLYPH_OFF
+
+
+class HiddenBoom(Trap):
+    """An armed trap that is invisible until the player steps on it."""
+
+    def glyph(self) -> str:
+        # The renderer treats an all-space glyph as an empty floor tile.
+        return "    "
+
+
+class BorderMine(GameObject):
+    """Invisible perimeter explosive: always lethal, never blocking.
+
+    Planted on every outer-border wall cell so that Wall.solid = False
+    (passable interior walls) cannot be abused to surf around the outer
+    wall and skip the puzzle. Independent of Trap.isLethal on purpose.
+    """
+
+    GLYPH = "####"  # terminal keeps showing a wall
+
+    def is_blocking(self) -> bool:
+        return False
+
+    def is_lethal(self) -> bool:
+        return True
+
+    def glyph(self) -> str:
+        return "####"
