@@ -157,8 +157,9 @@ class CircuitLine:
             return (b0.value, b1.value)
 
         def _apply(b0, b1, b2, b3) -> bool:
-            changed = PropertyRegistry.set(b0.value, b1.value, b3.value)
-            self.last_result = f"{b0.value}.{b1.value} = {b3.value}"
+            prop = PropertyRegistry.canonical(b0.value, b1.value)
+            changed = PropertyRegistry.set(b0.value, prop, b3.value)
+            self.last_result = f"{b0.value}.{prop} = {b3.value}"
             return changed
 
         def _scan(own_only: bool):

@@ -154,7 +154,12 @@ def build_level4() -> Level:
     from 3 rows of play space to 8, so every block can be pushed, spun
     around, and re-arranged freely before being slotted in.  Both
     statements still need fixing: Door.isOpen = true and
-    Platform.isSolid = false.
+    Platform.isSolid = false.  The rooms' contents are exchanged
+    relative to level 3: workshop A (first room) now holds the
+    Platform/Bridge statement guarding the obstacle at x=8, while
+    workshop B (second room) holds the Door statement guarding the
+    obstacle at x=20 -- so each circuit still sits in the room reached
+    strictly before its own obstacle.
 
     The bottom wall of the second workshop is mined exactly like the
     outer border (BorderMine inside every wall cell), so even
@@ -190,35 +195,36 @@ def build_level4() -> Level:
     for y in range(1, 9):
         lvl.add_wall(12, y)
 
-    lvl.add_object(Door(obstacleA, 10))
-    # The floor directly after the door conceals an armed explosive.
+    # The first obstacle (first room's trap) is now the Platform; the
+    # second one (second room's trap) is now the Door.
+    lvl.add_object(Platform(obstacleA, 10))
+    # The floor directly after the first obstacle conceals an armed explosive.
     lvl.add_object(HiddenBoom(obstacleA + 1, 10))
     # Additional hidden explosives at the red-marked locations.
     for boom_x, boom_y in ((13, 2), (13, 4), (13, 6), (13, 8), (25, 10)):
         lvl.add_object(HiddenBoom(boom_x, boom_y))
-    lvl.add_object(Platform(obstacleB, 10))
+    lvl.add_object(Door(obstacleB, 10))
 
-    # Door circuit in workshop A (slots near mid-room for generous clearance)
+    # Bridge circuit in workshop A (slots near mid-room for generous clearance)
     slotsA = [(4, 5), (5, 5), (6, 5), (7, 5)]
-    circA = CircuitLine("Door Statement", slotsA)
+    circA = CircuitLine("Bridge Statement", slotsA)
     lvl.add_circuit(circA)
-    lvl.add_object(CodeBlock(4, 5, CLASS, "Door"))
-    lvl.add_object(CodeBlock(5, 5, PROP, "isOpen"))
+    lvl.add_object(CodeBlock(4, 5, CLASS, "Platform"))
+    lvl.add_object(CodeBlock(5, 5, PROP, "isSolid"))
     lvl.add_object(CodeBlock(6, 5, OP, "="))
-    lvl.add_object(CodeBlock(7, 5, VALUE, False))  # wrong -- needs True
-    lvl.add_object(CodeBlock(9, 5, VALUE, True))   # spare correction block
-    lvl.add_object(CodeBlock(10, 7, CLASS, "Wall"))  # spare Wall token for wall logic
-    lvl.add_object(CodeBlock(10, 4, PROP, "solid"))  # spare solid token for wall logic
+    lvl.add_object(CodeBlock(7, 5, VALUE, True))   # wrong -- needs False
+    lvl.add_object(CodeBlock(9, 5, VALUE, False))  # spare correction block
+    lvl.add_object(CodeBlock(10, 7, CLASS, "Wall"))  # spare Wall token, kept in the first room
 
-    # Bridge circuit in workshop B
+    # Door circuit in workshop B
     slotsB = [(16, 5), (17, 5), (18, 5), (19, 5)]
-    circB = CircuitLine("Bridge Statement", slotsB)
+    circB = CircuitLine("Door Statement", slotsB)
     lvl.add_circuit(circB)
-    lvl.add_object(CodeBlock(16, 5, CLASS, "Platform"))
-    lvl.add_object(CodeBlock(17, 5, PROP, "isSolid"))
+    lvl.add_object(CodeBlock(16, 5, CLASS, "Door"))
+    lvl.add_object(CodeBlock(17, 5, PROP, "isOpen"))
     lvl.add_object(CodeBlock(18, 5, OP, "="))
-    lvl.add_object(CodeBlock(19, 5, VALUE, True))   # wrong -- needs False
-    lvl.add_object(CodeBlock(21, 5, VALUE, False))  # spare correction block
+    lvl.add_object(CodeBlock(19, 5, VALUE, False))  # wrong -- needs True
+    lvl.add_object(CodeBlock(21, 5, VALUE, True))   # spare correction block
 
     lvl.recompile_circuits()
     return lvl

@@ -89,8 +89,8 @@ brief:
 
 ## Fusing tokens into a new GOAL (Level 4)
 
-Push the `Plat.` class token (second workshop) into the `open` property
-token (first workshop) — or `open` into `Plat.` — horizontally or
+Push the `Plat.` class token (first workshop) into the `open` property
+token (second workshop) — or `open` into `Plat.` — horizontally or
 vertically. Each shove counts as a **press** (the tokens don't go
 anywhere, since blocks are never chain-pushed); after **3 presses** both
 tokens are consumed and a brand-new `GOAL` tile blooms right in front of
