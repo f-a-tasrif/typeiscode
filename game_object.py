@@ -84,23 +84,38 @@ class Player(GameObject):
 
 class Platform(GameObject):
     """
-    A bridge/wall segment whose solidity is entirely governed by the
-    live property dictionary: Platform.isSolid.
-    This is the canonical example from the design doc.
+    The walkable path cell (shown as `Path.` on the circuit line) whose
+    state is governed by the live property dictionary: Path.solid.
+
+      * Path.solid = True  -> the void trap is REMOVED: the cell is plain
+        walkable floor, the character crosses it safely.
+      * Path.solid = False -> the path is a VOID.  It never blocks (there
+        is simply no floor) -- stepping onto it drops the character into
+        the void, which ends the run with the character invisible.
+
+    Recompiling the statement flips between the two states, so changing
+    the logic back makes the trap reappear.
     """
-    GLYPH_SOLID = "PLAT"
-    GLYPH_GHOST = "plat"
+    GLYPH_VOID = "VOID"
+    GLYPH_SAFE = "    "  # reads as plain floor in the terminal renderer
 
     def __init__(self, x, y):
         super().__init__(x, y, movable=False)
 
+    def is_void(self) -> bool:
+        """True while Path.solid = False: the cell is an open void."""
+        return not bool(PropertyRegistry.get("Platform", "isSolid", True))
+
     def is_blocking(self) -> bool:
-        # Platform is solid (blocks movement) when Platform.isSolid is True.
-        # When Platform.isSolid is False, it is non-solid / passable.
-        return bool(PropertyRegistry.get("Platform", "isSolid", True))
+        # Never blocks: solid=True is walkable floor, solid=False is a hole.
+        return False
+
+    def is_lethal(self) -> bool:
+        # Falling into the void ends the run.
+        return self.is_void()
 
     def glyph(self) -> str:
-        return self.GLYPH_SOLID if self.is_blocking() else self.GLYPH_GHOST
+        return self.GLYPH_VOID if self.is_void() else self.GLYPH_SAFE
 
 
 class Door(GameObject):

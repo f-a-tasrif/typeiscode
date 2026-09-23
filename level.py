@@ -11,7 +11,7 @@ cell beyond it is free); if a Platform/Door/Trap is in the way its
 
 from __future__ import annotations
 from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine
-from blocks import CodeBlock, CircuitLine, is_merge_pair, MERGE_PRESS_TIMES
+from blocks import CodeBlock, CircuitLine, is_merge_pair
 from registry import PropertyRegistry
 
 DIRS = {
@@ -43,11 +43,10 @@ class Level:
 
         self.won = False
         self.dead = False
+        # True when the character has fallen into a Path void: it is gone
+        # from the board (invisible) for the rest of the run.
+        self.player_invisible = False
         self.moves = 0
-
-        # Fusion progress for the Plat./open pair:
-        # (id of block A, id of block B) -> presses so far.
-        self.press_counts: dict[tuple[int, int], int] = {}
 
     # -- level construction helpers -----------------------------------
     def add_wall_border(self):
@@ -111,6 +110,14 @@ class Level:
         for c in self.circuits:
             c.try_compile(bpos, owned_targets=owned)
 
+        # If the logic just collapsed the path the character is standing on
+        # back into a void, it falls in on the spot.
+        if self.player is not None and not self.won and not self.dead:
+            standing = self.object_at(self.player.x, self.player.y)
+            if isinstance(standing, Platform) and standing.is_void():
+                self.dead = True
+                self.player_invisible = True
+
     def move_player(self, direction: str) -> str:
         """Attempt to move the player. Returns a short status message."""
         if direction not in DIRS or self.won or self.dead:
@@ -139,16 +146,19 @@ class Level:
                     return "Can't push -- wall behind the block."
                 target = self.object_at(bx, by)
                 if target is not None:
-                    # Shoving the Plat./open pair into each other (either
-                    # order, horizontally or vertically) is a *press*:
-                    # after MERGE_PRESS_TIMES presses they fuse into a Goal.
+                    # Shoving the Path./open pair straight into each other
+                    # fuses them on the spot.
                     if is_merge_pair(occ, target):
-                        return self._press_merge(occ, target)
+                        return self._fuse_pair(occ, target)
                     return "Can't push -- something is already there."
                 occ.x, occ.y = bx, by
-                self._clear_presses_for(occ)
                 self.player.x, self.player.y = nx, ny
                 self.moves += 1
+                # Path. and open fuse the moment they end up side by side —
+                # no repeated pressing required.
+                partner = self._merge_partner(occ)
+                if partner is not None:
+                    return self._fuse_pair(occ, partner)
                 self.recompile_circuits()
             else:
                 # Platform / Door / Trap -- consult live behaviour
@@ -159,6 +169,10 @@ class Level:
                 self.moves += 1
                 if occ.is_lethal():
                     self.dead = True
+                    if isinstance(occ, Platform) and occ.is_void():
+                        self.player_invisible = True
+                        return ("You fell into the void!  The character "
+                                "vanishes into the dark.  Game over.")
                     if isinstance(occ, (HiddenBoom, BorderMine)):
                         return "BOOM! The hidden explosive burst and blew you to pieces!"
                     return "You stepped on a live trap! Game over."
@@ -172,42 +186,27 @@ class Level:
 
         return ""
 
-    def _clear_presses_for(self, block: CodeBlock) -> None:
-        """Forget fusion progress involving `block` as soon as it moves on."""
-        bid = id(block)
-        for key in [k for k in self.press_counts if bid in k]:
-            del self.press_counts[key]
+    def _merge_partner(self, block: CodeBlock) -> CodeBlock | None:
+        """The Path./open token sitting orthogonally next to `block`, if any."""
+        for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+            other = self.object_at(block.x + dx, block.y + dy)
+            if is_merge_pair(block, other):
+                return other
+        return None
 
-    def _press_merge(self, pushed: CodeBlock, pressed: CodeBlock) -> str:
+    def _fuse_pair(self, pushed: CodeBlock, other: CodeBlock) -> str:
         """
-        The player shoved `pushed` straight into `pressed`; neither token can
-        go anywhere (blocks are never chain-pushed), so the shove is counted
-        as a *press*.  Pressing the Plat./open pair into each other -- either
-        order, horizontally or vertically -- MERGE_PRESS_TIMES times in a row
-        consumes both tokens, removes any pre-existing goal (there is only
-        ever one flag), and blooms a brand-new Goal tile on the cell the
-        player was pushing into.
+        The Path. and open tokens are consumed the moment they are put
+        together -- one contact is enough, no repeated pressing.  Both
+        blocks vanish, any pre-existing goal (there is only ever one
+        flag) is removed, and a brand-new Goal tile blooms on the cell
+        the pushed token occupies.
         """
-        key = tuple(sorted((id(pushed), id(pressed))))
-        count = self.press_counts.get(key, 0) + 1
-        names = f"{pushed.glyph().strip()} + {pressed.glyph().strip()}"
-
-        if count < MERGE_PRESS_TIMES:
-            self.press_counts[key] = count
-            if count == 1:
-                return (f"{names} grind together... ({count}/{MERGE_PRESS_TIMES}) "
-                        f"Press them into each other {MERGE_PRESS_TIMES} times "
-                        f"to fuse a new GOAL!")
-            return f"{names} grind together... ({count}/{MERGE_PRESS_TIMES}) One more press!"
-
-        # Final press: both tokens are consumed and the new goal blooms
-        # right in front of the player.  There is only ever one flag: any
-        # pre-existing goal (level 4's original corridor GOAL) vanishes
-        # at the same moment.
+        names = f"{pushed.glyph().strip()} + {other.glyph().strip()}"
         gx, gy = pushed.x, pushed.y
         self.dynamic_objects = [
             o for o in self.dynamic_objects
-            if o is not pushed and o is not pressed
+            if o is not pushed and o is not other
         ]
         replaced = False
         for (tx, ty), tile in list(self.tiles.items()):
@@ -215,8 +214,6 @@ class Level:
                 self.tiles[(tx, ty)] = Floor(tx, ty)
                 replaced = True
         self.tiles[(gx, gy)] = Goal(gx, gy)
-        self._clear_presses_for(pushed)
-        self._clear_presses_for(pressed)
         self.recompile_circuits()
         msg = f"{names} fuse together!"
         if replaced:
@@ -236,7 +233,11 @@ class Level:
         for y in range(self.height):
             row_cells = []
             for x in range(self.width):
-                if self.player and self.player.x == x and self.player.y == y:
+                # An invisible character (fallen into a void) is not drawn.
+                on_player = (self.player is not None and self.player.x == x
+                             and self.player.y == y
+                             and not (self.dead and self.player_invisible))
+                if on_player:
                     glyph = self.player.glyph()
                 else:
                     occ = self.object_at(x, y)
@@ -261,5 +262,5 @@ class Level:
 
     def reset(self):
         PropertyRegistry.reset(self.initial_registry)
-        self.press_counts.clear()
+        self.player_invisible = False
         self.recompile_circuits()

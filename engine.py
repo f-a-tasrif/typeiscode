@@ -22,8 +22,9 @@ How to win:
   - Push the right block into each slot to form a valid statement.
   - When the circuit compiles, every object of that class updates live.
   - Use the changed behavior to reach the goal tile.
-  - Special: press the `Plat.` and `open` tokens into each other
-    3 times to fuse them into a brand-new GOAL.
+  - Special: push the `Path.` and `open` tokens next to each other
+    (horizontally or vertically) -- they fuse instantly into a
+    brand-new GOAL.
 """
 
 

@@ -14,7 +14,7 @@ always look the value up live rather than caching it.
 class PropertyRegistry:
     _data: dict[str, dict[str, object]] = {
         "Wall": {"solid": True},
-        "Platform": {"isSolid": True},
+        "Platform": {"isSolid": False},
         "Door": {"isOpen": False},
         "Trap": {"isLethal": True},
     }

@@ -14,7 +14,7 @@ from graficial import Window
 from levels_data import ALL_LEVELS
 from tile_renderer import (
     draw_wall, draw_floor, draw_goal, draw_player,
-    draw_platform_solid, draw_platform_ghost,
+    draw_void,
     draw_door_closed, draw_door_open,
     draw_trap_lethal, draw_trap_safe,
     draw_boom_explosion,
@@ -28,7 +28,6 @@ PANEL_SECTION  = "#181e3a"
 TEXT_COLOR      = "#e0e4ff"
 TEXT_DIM        = "#8890b0"
 ACCENT         = "#5f7fff"
-MESSAGE_BG     = "#182046"
 SUCCESS_COLOR   = "#4adc6e"
 DANGER_COLOR    = "#e05565"
 
@@ -47,7 +46,7 @@ class GUIEngine:
         self.game_completed = False
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
-        self._last_message = "Welcome!  W/A/S/D or Arrow Keys to move.  R = restart.  Q = quit."
+        self._last_message = ""
 
         # window + layout
         self.window = Window("Type Is Code", 1200, 640, bg=BACKGROUND,
@@ -69,19 +68,6 @@ class GUIEngine:
             "", font=("Consolas", 14, "bold"), fg=TEXT_COLOR, bg=PANEL_BG)
         self.moves_label = self.info_frame.add_label(
             "", font=("Consolas", 11), fg=TEXT_DIM, bg=PANEL_BG)
-        self.message_label = self.info_frame.add_label(
-            "", font=("Consolas", 10), fg=TEXT_COLOR, bg=MESSAGE_BG,
-            wraplength=360)
-        self.info_frame.add_label(
-            "⚡ Circuit Lines", font=("Consolas", 12, "bold"),
-            fg=ACCENT, bg=PANEL_BG)
-        self.circuit_view = self.info_frame.add_text_view(
-            width=44, height=6, fg=TEXT_COLOR, bg=PANEL_SECTION)
-        self.info_frame.add_label(
-            "📋 Live Registry", font=("Consolas", 12, "bold"),
-            fg=ACCENT, bg=PANEL_BG)
-        self.registry_view = self.info_frame.add_text_view(
-            width=44, height=3, fg=TEXT_COLOR, bg=PANEL_SECTION)
         self.info_frame.add_label(
             "🎮 Controls", font=("Consolas", 12, "bold"),
             fg=ACCENT, bg=PANEL_BG)
@@ -115,6 +101,9 @@ class GUIEngine:
     # ── rendering ───────────────────────────────────────────────────
     def render_frame(self, message: str = ""):
         self._last_message = message or ""
+        # settle pending geometry so the canvas reports its current size
+        # (otherwise the board is drawn for the previous window size)
+        self.window.root.update_idletasks()
         self.canvas.clear()
         raw = self.canvas.raw  # direct tk.Canvas for tile_renderer
 
@@ -166,14 +155,19 @@ class GUIEngine:
 
                 if is_player and self.level.dead and cls in ("HiddenBoom", "BorderMine"):
                     draw_boom_explosion(raw, px, py, cell)
+                elif is_player and self.level.dead and self.level.player_invisible:
+                    # Fell into the void: the character is gone — only the
+                    # empty pit is drawn.
+                    draw_void(raw, px, py, cell)
                 elif is_player:
                     draw_player(raw, px, py, cell)
                 elif occ is not None:
                     if cls == "Platform":
-                        if occ.is_blocking():
-                            draw_platform_solid(raw, px, py, cell)
+                        if occ.is_void():
+                            draw_void(raw, px, py, cell)
                         else:
-                            draw_platform_ghost(raw, px, py, cell)
+                            # Path.solid = True — void trap removed, plain floor
+                            draw_floor(raw, px, py, cell)
                     elif cls == "Door":
                         if occ.is_blocking():
                             draw_door_closed(raw, px, py, cell)
@@ -201,9 +195,6 @@ class GUIEngine:
                 fg=TEXT_COLOR)
 
         self.moves_label.configure(text=f"Moves: {self.level.moves}")
-        self.message_label.configure(text=message or "Ready.")
-        self.circuit_view.set_text(self.level.render_circuits())
-        self.registry_view.set_text(self.level.render_registry())
         self.help_view.set_text(
             "W / ↑  = up        A / ← = left\n"
             "S / ↓  = down      D / → = right\n"
@@ -211,7 +202,7 @@ class GUIEngine:
             "Q = quit\n\n"
             "Push code blocks onto the circuit line so\n"
             "the statement compiles.  CLASS PROP = VALUE\n"
-            "Press Plat.+open together 3x = new GOAL"
+            "Put Path. next to open = they fuse into a new GOAL"
         )
 
     # ── input ───────────────────────────────────────────────────────

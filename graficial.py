@@ -38,6 +38,11 @@ class Window:
         if new_size != self._last_size:
             self._last_size = new_size
             if self._resize_handler is not None:
+                # The toplevel <Configure> event arrives *before* the pack
+                # geometry manager has given children (canvas, info panel)
+                # their new sizes.  Flush pending layout so the redraw
+                # below uses the current canvas size, not the old one.
+                self.root.update_idletasks()
                 self._resize_handler(event.width, event.height)
 
     def on_key_down(self, handler):

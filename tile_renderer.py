@@ -32,6 +32,11 @@ PLATFORM_SOLID = "#7b5cff"
 PLATFORM_PILLAR= "#5a3fd6"
 PLATFORM_GHOST = "#574d87"
 PLATFORM_GHOST_DASH = "#7b6baf"
+VOID_BG        = "#04050c"
+VOID_RING      = "#0a0c1a"
+VOID_CORE      = "#000000"
+VOID_RIM       = "#2a2160"
+VOID_GLOW      = "#5a3fd6"
 DOOR_CLOSED    = "#d96b3d"
 DOOR_FRAME     = "#a04820"
 DOOR_KEYHOLE   = "#1a1a1a"
@@ -244,6 +249,33 @@ def draw_platform_ghost(canvas: tk.Canvas, x: int, y: int, size: int):
                             x + size - m - 2, y + size - m,
                             fill="", outline=PLATFORM_GHOST_DASH,
                             width=1, dash=(3, 3))
+
+
+def draw_void(canvas: tk.Canvas, x: int, y: int, size: int):
+    """Bottomless void pit — the path collapsed into nothing.
+
+    Drawn for a Path./Platform cell while Path.solid = False.  Stepping
+    onto it drops the character into the void (it vanishes, run over).
+    """
+    # darkness swallows the whole cell
+    canvas.create_rectangle(x, y, x + size, y + size,
+                            fill=VOID_BG, outline=VOID_RIM, width=1)
+    cx, cy = x + size // 2, y + size // 2
+    m = max(2, size // 8)
+    outer = max(3, size // 2 - m)
+    # faint glowing rim marks it as a hazard
+    canvas.create_oval(cx - outer, cy - outer, cx + outer, cy + outer,
+                       fill=VOID_RING, outline=VOID_GLOW,
+                       width=max(1, size // 24), dash=(4, 3))
+    # sinking rings give the pit depth
+    for frac in (0.66, 0.42):
+        r = max(1, int(outer * frac))
+        canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
+                           fill=VOID_BG, outline="")
+    # black core
+    r = max(1, int(outer * 0.2))
+    canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
+                       fill=VOID_CORE, outline=VOID_CORE)
 
 
 def draw_door_closed(canvas: tk.Canvas, x: int, y: int, size: int):

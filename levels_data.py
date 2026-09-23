@@ -25,7 +25,11 @@ from blocks import CodeBlock, CircuitLine, CLASS, PROP, OP, VALUE
 
 DEFAULT_REGISTRY = {
     "Wall": {"solid": True},
-    "Platform": {"isSolid": True},
+    # Path.solid = False by default: every Path./Platform cell starts out
+    # as an open void (the trap).  Only a compiled Path.solid = True turns
+    # it back into walkable ground — and breaking the statement makes the
+    # void reappear.
+    "Platform": {"isSolid": False},
     "Door": {"isOpen": False},
     "Trap": {"isLethal": True},
 }
@@ -33,9 +37,11 @@ DEFAULT_REGISTRY = {
 
 def build_level1() -> Level:
     """
-    Tutorial level. A solid Platform blocks the route to the goal.
-    The workshop circuit reads Platform.isSolid = true.
-    Swap in the spare `false` block to make the platform non-solid/passable.
+    Tutorial level. The path to the goal is broken: the circuit reads
+    Path.solid = false, so the Path cell in the corridor is an open void
+    and stepping into it makes the character vanish.
+    Swap in the spare `true` block to seal the void into solid, walkable
+    ground and cross to the goal.
     """
     W, H = 16, 7
     lvl = Level("1 - First Compile", W, H, DEFAULT_REGISTRY)
@@ -55,9 +61,9 @@ def build_level1() -> Level:
     lvl.add_object(CodeBlock(4, 2, CLASS, "Platform"))
     lvl.add_object(CodeBlock(5, 2, PROP, "isSolid"))
     lvl.add_object(CodeBlock(6, 2, OP, "="))
-    lvl.add_object(CodeBlock(7, 2, VALUE, True))  # current state: solid/blocking
+    lvl.add_object(CodeBlock(7, 2, VALUE, False))  # current state: the path is a void
 
-    lvl.add_object(CodeBlock(9, 2, VALUE, False))  # spare correction block to make it false (passable)
+    lvl.add_object(CodeBlock(9, 2, VALUE, True))  # spare correction block: Path.solid = True seals the void
 
     lvl.recompile_circuits()
     return lvl
@@ -97,10 +103,10 @@ def build_level2() -> Level:
 def build_level3() -> Level:
     """
     Two obstacles in sequence: a live Trap that must be disarmed
-    (Trap.isLethal = false) and, further along, a solid Platform that
-    must be made passable (Platform.isSolid = false). Two independent
-    workshops, one per obstacle, each reachable strictly before its
-    own obstacle's column.
+    (Trap.isLethal = false) and, further along, a void in the path that
+    must be sealed into walkable ground (Path.solid = true). Two
+    independent workshops, one per obstacle, each reachable strictly
+    before its own obstacle's column.
     """
     W, H = 28, 7
     lvl = Level("3 - Two Statements", W, H, DEFAULT_REGISTRY)
@@ -140,8 +146,8 @@ def build_level3() -> Level:
     lvl.add_object(CodeBlock(16, 2, CLASS, "Platform"))
     lvl.add_object(CodeBlock(17, 2, PROP, "isSolid"))
     lvl.add_object(CodeBlock(18, 2, OP, "="))
-    lvl.add_object(CodeBlock(19, 2, VALUE, True))   # wrong -- needs False
-    lvl.add_object(CodeBlock(21, 2, VALUE, False))  # spare correction block
+    lvl.add_object(CodeBlock(19, 2, VALUE, False))  # the path ahead is a void -- needs True
+    lvl.add_object(CodeBlock(21, 2, VALUE, True))   # spare correction block
 
     lvl.recompile_circuits()
     return lvl
@@ -154,7 +160,7 @@ def build_level4() -> Level:
     from 3 rows of play space to 8, so every block can be pushed, spun
     around, and re-arranged freely before being slotted in.  Both
     statements still need fixing: Door.isOpen = true and
-    Platform.isSolid = false.  The rooms' contents are exchanged
+    Path.solid = true (sealing the void back into walkable ground).  The rooms' contents are exchanged
     relative to level 3: workshop A (first room) now holds the
     Platform/Bridge statement guarding the obstacle at x=8, while
     workshop B (second room) holds the Door statement guarding the
@@ -166,8 +172,9 @@ def build_level4() -> Level:
     Wall.solid = False cannot walk through it.  That seals off the
     original corridor GOAL -- its only safe approach is wall cell
     (26, 9) -- so the level is finished by fusing a new GOAL from the
-    Plat. and open tokens; the original flag disappears the moment the
-    new one blooms (only one flag exists at a time).
+    Path. and open tokens: they fuse the moment they are put together
+    (one contact, no pressing); the original flag disappears the moment
+    the new one blooms (only one flag exists at a time).
     """
     W, H = 28, 12
     lvl = Level("4 - Spacious Statements", W, H, DEFAULT_REGISTRY)
@@ -212,8 +219,8 @@ def build_level4() -> Level:
     lvl.add_object(CodeBlock(4, 5, CLASS, "Platform"))
     lvl.add_object(CodeBlock(5, 5, PROP, "isSolid"))
     lvl.add_object(CodeBlock(6, 5, OP, "="))
-    lvl.add_object(CodeBlock(7, 5, VALUE, True))   # wrong -- needs False
-    lvl.add_object(CodeBlock(9, 5, VALUE, False))  # spare correction block
+    lvl.add_object(CodeBlock(7, 5, VALUE, False))  # the path ahead is a void -- needs True
+    lvl.add_object(CodeBlock(9, 5, VALUE, True))   # spare correction block
     lvl.add_object(CodeBlock(10, 7, CLASS, "Wall"))  # spare Wall token, kept in the first room
 
     # Door circuit in workshop B

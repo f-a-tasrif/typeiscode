@@ -31,24 +31,31 @@ as a tiny compiler. They read, left to right:
 
 ```
 [CLASS] [PROPERTY] [OPERATOR] [VALUE]
-Platform . isSolid   =          true
+Path   .   solid     =          false
 ```
 
-Pushable **code blocks** (`PLAT`/class tokens, `sold`/property tokens,
-`==`/operators, `true`/`false` value tokens) sit on the grid. Push the
+Pushable **code blocks** (`Path.`/class tokens, `solid`/property tokens,
+` = `/operators, `True`/`False` value tokens) sit on the grid. Push the
 wrong block out of a slot and push the correct one in, and the moment
 all four slots hold a valid statement, the engine "compiles" it and
 writes it into a **live property registry**. Every object of that
 class in the level re-evaluates its behavior on the very next tick —
-solidify `Platform.isSolid`, open `Door.isOpen`, or disarm
+seal a void with `Path.solid`, open `Door.isOpen`, or disarm
 `Trap.isLethal` to clear the way to the goal (`GOAL`).
+
+**The void trap:** every `Path` cell in the corridor is a bottomless
+void while the logic says `Path.solid = False`. Stepping into it drops
+the character into the void — it vanishes (invisible) and the run ends.
+Compile `Path.solid = True` and the void trap is removed: the cell
+becomes plain walkable ground. Change the logic back and the trap
+reappears.
 
 ## OOP architecture
 
 ```
 game_object.py    GameObject (abstract base)
                     +-- Wall, Floor, Goal, Player
-                    +-- Platform   (is_blocking() reads Platform.isSolid)
+                    +-- Platform   (the Path cell: Path.solid = False is a void)
                     +-- Door       (is_blocking() reads Door.isOpen)
                     +-- Trap       (is_lethal()   reads Trap.isLethal)
 blocks.py         CodeBlock(GameObject)  -- pushable syntax tokens
@@ -74,14 +81,14 @@ brief:
   methods on *any* object without caring which subclass it is.
 * **Dynamic property dictionaries** — `PropertyRegistry` is the
   single source of truth; nothing is hard-coded or cached, so a
-  circuit compiling `Platform.isSolid = true` retroactively changes
+  circuit compiling `Path.solid = true` retroactively changes
   every `Platform` instance's behavior on the next tick.
 
 ## Levels
 
-1. **First Compile** — tutorial: solidify a bridge Platform.
+1. **First Compile** — tutorial: seal the void in the path.
 2. **Open Sesame** — introduces Door; open it to pass.
-3. **Two Statements** — disarm a Trap, then solidify a Platform, to
+3. **Two Statements** — disarm a Trap, then seal a void, to
    reach the goal.
 4. **Spacious Statements** — two tall workshops, a corridor whose GOAL is
    sealed behind a booby-trapped wall, and the token-fusion trick
@@ -89,14 +96,14 @@ brief:
 
 ## Fusing tokens into a new GOAL (Level 4)
 
-Push the `Plat.` class token (first workshop) into the `open` property
-token (second workshop) — or `open` into `Plat.` — horizontally or
-vertically. Each shove counts as a **press** (the tokens don't go
-anywhere, since blocks are never chain-pushed); after **3 presses** both
-tokens are consumed and a brand-new `GOAL` tile blooms right in front of
-you. The new flag replaces the old one: level 4's original corridor
-`GOAL` vanishes the moment the fusion completes, so only one flag exists
-at a time. Move either token and the press counter resets.
+Push the `Path.` class token (first workshop) next to the `open`
+property token (second workshop) — horizontally or vertically, in
+either order. The moment the two blocks touch they **fuse**: both
+tokens are consumed and a brand-new `GOAL` tile blooms on the cell the
+pushed token occupied, right in front of you — no pressing rounds. The
+new flag replaces the old one: level 4's original corridor `GOAL`
+vanishes the moment the fusion completes, so only one flag exists at a
+time.
 
 ## Extending the game
 

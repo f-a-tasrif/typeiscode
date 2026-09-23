@@ -67,10 +67,9 @@ class CodeBlock(GameObject):
 
 
 # The `Path.` class token and the `open` property token are the two halves
-# of a "goal seed": press one into the other -- horizontally or vertically,
-# in either order -- MERGE_PRESS_TIMES times in a row and they fuse into a
-# brand-new Goal tile (see Level._press_merge).
-MERGE_PRESS_TIMES = 3
+# of a "goal seed": the moment the two blocks are put together -- next to
+# each other horizontally or vertically, in either order -- they fuse into
+# a brand-new Goal tile (see Level._fuse_pair).  One contact, no pressing.
 MERGE_TOKENS: set[tuple[str, object]] = {("CLASS", "Platform"), ("PROP", "isOpen")}
 
 
@@ -78,7 +77,7 @@ def is_merge_pair(a, b) -> bool:
     """True when `a` and `b` are the Path./open pair, orthogonally adjacent."""
     if not (isinstance(a, CodeBlock) and isinstance(b, CodeBlock)):
         return False
-    # Only horizontal or vertical neighbours can press into each other.
+    # Only horizontal or vertical neighbours can fuse with each other.
     if abs(a.x - b.x) + abs(a.y - b.y) != 1:
         return False
     # Set equality makes the check order-agnostic: Path.-then-open and
