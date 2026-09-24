@@ -207,9 +207,8 @@ def build_level4() -> Level:
     lvl.add_object(Platform(obstacleA, 10))
     # The floor directly after the first obstacle conceals an armed explosive.
     lvl.add_object(HiddenBoom(obstacleA + 1, 10))
-    # Additional hidden explosives at the red-marked locations.
-    for boom_x, boom_y in ((13, 2), (13, 4), (13, 6), (13, 8), (25, 10)):
-        lvl.add_object(HiddenBoom(boom_x, boom_y))
+    # A hidden explosive seals the direct corridor approach to the goal.
+    lvl.add_object(HiddenBoom(25, 10))
     lvl.add_object(Door(obstacleB, 10))
 
     # Bridge circuit in workshop A (slots near mid-room for generous clearance)
