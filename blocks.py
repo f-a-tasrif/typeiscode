@@ -27,6 +27,7 @@ CLASS = "CLASS"
 PROP = "PROP"
 OP = "OP"
 VALUE = "VALUE"
+NOT = "NOT"
 
 # how each (kind, value) pair is rendered as a 4-char glyph
 _GLYPHS = {
@@ -34,6 +35,9 @@ _GLYPHS = {
     ("CLASS", "Wall"): "Wall.",
     ("CLASS", "Door"): "Door.",
     ("CLASS", "Trap"): "Trap.",
+    ("CLASS", "Room"): "Room.",
+    ("PROP", "fire"): "fire",
+    ("PROP", "water"): "water",
     ("PROP", "isSolid"): "solid",
     ("PROP", "isOpen"): "open",
     ("PROP", "isLethal"): "lethal",
@@ -41,6 +45,7 @@ _GLYPHS = {
     ("OP", "="): " = ",
     ("VALUE", True): "True",
     ("VALUE", False): "False",
+    ("NOT", "NOT"): "NOT",
 }
 
 

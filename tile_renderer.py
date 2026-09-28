@@ -377,6 +377,7 @@ def draw_code_block(canvas: tk.Canvas, x: int, y: int, size: int,
         "PROP":   ("#1a5a4a", "#40d8a0"),
         "OP":     ("#4a3a1a", "#d0a840"),
         "VALUE":  ("#3a1a5a", "#b070e0"),
+        "NOT":    ("#5a1a3a", "#ff5f8f"),
     }
     bg, border = kind_colors.get(kind, (BLOCK_BG, BLOCK_BORDER))
     m = max(1, size // 10)

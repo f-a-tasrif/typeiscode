@@ -5,17 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="31bbebb8-0c8f-4566-b5c6-a3650de0c7ed" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/blocks.py" beforeDir="false" afterPath="$PROJECT_DIR$/blocks.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/debug_layout.py" beforeDir="false" afterPath="$PROJECT_DIR$/debug_layout.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/engine.py" beforeDir="false" afterPath="$PROJECT_DIR$/engine.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/game_object.py" beforeDir="false" afterPath="$PROJECT_DIR$/game_object.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/gui_engine.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui_engine.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/level.py" beforeDir="false" afterPath="$PROJECT_DIR$/level.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/levels_data.py" beforeDir="false" afterPath="$PROJECT_DIR$/levels_data.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/registry.py" beforeDir="false" afterPath="$PROJECT_DIR$/registry.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_levels.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_levels.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tile_renderer.py" beforeDir="false" afterPath="$PROJECT_DIR$/tile_renderer.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -113,7 +103,7 @@
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
     "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "git-widget-placeholder": "master",
+    "git-widget-placeholder": "main",
     "ignore.virus.scanning.warn.message": "true",
     "junie.onboarding.icon.badge.shown": "true",
     "last_opened_file_path": "E:/Projects/typeiscode",

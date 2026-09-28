@@ -10,8 +10,8 @@ dependencies.
 
 ```bash
 python3 main.py                 # start at level 1
-python3 main.py --level 4       # start directly at level 4
-python3 main.py -l 2            # short form
+python3 main.py --level 8       # start directly at level 8
+python3 main.py -l 5            # short form
 python3 main.py --list          # list available levels
 ```
 
@@ -59,14 +59,22 @@ game_object.py    GameObject (abstract base)
                     +-- Door       (is_blocking() reads Door.isOpen)
                     +-- Trap       (is_lethal()   reads Trap.isLethal)
 blocks.py         CodeBlock(GameObject)  -- pushable syntax tokens
+                                             (incl. the NOT token)
                    CircuitLine            -- the 4-slot "compiler"
+                                             (circuit levels only)
 registry.py       PropertyRegistry       -- the master, mutable,
                                             class -> {property: value}
                                             dictionary every instance
                                             reads from every tick
 level.py          Level                  -- grid, movement/push rules,
-                                            win/lose conditions
-levels_data.py    build_level1/2/3()     -- concrete puzzle layouts
+                                            win/lose conditions;
+                                            rule_mode "circuit" (1-4)
+                                            vs "global" (5-8)
+levels_data.py    build_level1..8        -- concrete puzzle layouts;
+                   _build_from_map       -- data-driven global levels
+                                            from maps_data.py
+maps_data.py      MAPS                   -- level 5-8 maps ported from
+                                            type-is-code-maps.html
 engine.py         GameEngine             -- terminal UI / main loop
 main.py           entry point
 ```
@@ -93,6 +101,53 @@ brief:
 4. **Spacious Statements** — two tall workshops, a corridor whose GOAL is
    sealed behind a booby-trapped wall, and the token-fusion trick
    described below.
+5. **NOT Vault, Trap** — introduces `NOT`; seal the path with
+   `True`, free NOT from the vault to build
+   `Trap.lethal = NOT True` (False).
+6. **Serpentine Vault** — both rules use `NOT` (`NOT True` opens
+   the table gap, `NOT False` opens the door).
+7. **Swap the Values** — rules revert to defaults when a value
+   leaves; arm the trap rule, then open the door.
+8. **Four Chambers, Three Gates** — the longest chain: `True`
+   opens the door and seals the table, `NOT True` disarms the
+   trap.
+
+## rule_mode: "circuit" vs "global"
+
+Levels 1-4 run in `circuit` mode: each `CircuitLine` owns one
+`(CLASS, PROP)` target learned from its 4 slots, and a statement can
+also be assembled anywhere (rows read left-to-right, columns
+top-to-bottom).
+
+Levels 5-8 run in `global` mode (`Level.rule_mode = "global"`,
+fusion disabled):
+
+* Rules are read **horizontally only**, left to right, in one row:
+  `CLASS PROP = VALUE`, where the value may be `NOT <bool>`, which
+  inverts it (`NOT True` is False).
+* Rules are found **anywhere** on the board by scanning blocks in
+  row-major order; later rules override earlier ones. A stray token
+  after the value is ignored.
+* Only `(class, prop)` pairs present in the level's initial registry
+  take effect; anything else is ignored.
+* When a value leaves a rule, the registry **reverts to its default**
+  on the very next recompile.
+* Defaults for these levels (`RULES_REGISTRY`): `Wall.solid = True`,
+  `Platform.isSolid = False` (the path starts as an open void, like
+  level 1), `Door.isOpen = False`, `Trap.isLethal = True`.
+
+## New tokens and obstacles (levels 5-8)
+
+* **`NOT` token** (`blocks.NOT`): placed directly after `=`, with the
+  boolean value directly after it. Rendered as its own pink chip in
+  the GUI.
+* **Path traps in levels 5-8** are level 1's own `Platform`:
+  plain floor while `Path.solid = True`, lethal void pit while
+  `False` (stepping in drops the character, invisible, run over).
+  Levels 5 and 8 feed their Path rule with `True` instead of the
+  HTML's `False`, and level 6's first-room `True` is a `False`, so
+  every Path rule seals into safe floor (see `_flip_value_block`
+  in `levels_data.py`). All four replays pass.
 
 ## Fusing tokens into a new GOAL (Level 4)
 

@@ -20,8 +20,9 @@ Layout pattern used by every level ("workshop + corridor"):
 """
 
 from level import Level
-from game_object import Platform, Door, Trap, HiddenBoom, BorderMine
-from blocks import CodeBlock, CircuitLine, CLASS, PROP, OP, VALUE
+from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor
+from blocks import CodeBlock, CircuitLine, CLASS, PROP, OP, VALUE, NOT
+from maps_data import MAPS
 
 DEFAULT_REGISTRY = {
     "Wall": {"solid": True},
@@ -33,6 +34,87 @@ DEFAULT_REGISTRY = {
     "Door": {"isOpen": False},
     "Trap": {"isLethal": True},
 }
+
+RULES_REGISTRY = {
+    "Wall": {"solid": True},
+    # Like level 1: the path starts as an open void (pit) and only a
+    # compiled Path.solid = True seals it -- except the HTML solutions
+    # for these maps open the tables instead of sealing them, so the
+    # T cells stay deadly once opened (see tests/test_maps.py).
+    "Platform": {"isSolid": False},
+    "Door": {"isOpen": False},
+    "Trap": {"isLethal": True},
+}
+
+# -- data-driven global levels (levels 5+) ------------------------------
+# Token text -> (kind, value) for CodeBlocks placed by _build_from_map.
+MAP_TOKENS: dict[str, tuple[str, object]] = {
+    "Path.": (CLASS, "Platform"),
+    "Door.": (CLASS, "Door"),
+    "Trap.": (CLASS, "Trap"),
+    "solid": (PROP, "isSolid"),
+    "open": (PROP, "isOpen"),
+    "lethal": (PROP, "isLethal"),
+    "=": (OP, "="),
+    "True": (VALUE, True),
+    "False": (VALUE, False),
+    "NOT": (NOT, "NOT"),
+}
+
+
+def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
+                    tokens: list[tuple[int, int, str]]) -> Level:
+    """Build a global-rules level from HTML map data.
+
+    `rows` are ASCII map rows, `start` is (row, col), `tokens` are
+    (row, col, text).  The game uses (x, y) = (col, row).  No wall
+    border is added (nothing in these levels can make walls passable,
+    so no BorderMines are needed) and no CircuitLine objects are used:
+    rules compile from statements found anywhere on the board.
+    """
+    W, H = len(rows[0]), len(rows)
+    lvl = Level(name, W, H, RULES_REGISTRY)
+    lvl.rule_mode = "global"
+    lvl.fusion_enabled = False
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            if ch == "#":
+                lvl.add_wall(x, y)
+            elif ch == "T":
+                # Level 1's own path trap: safe floor while
+                # Path.solid = True, lethal void while False.
+                lvl.add_object(Platform(x, y))
+            elif ch == "D":
+                lvl.add_object(Door(x, y))
+            elif ch == "X":
+                lvl.add_object(Trap(x, y))
+            elif ch == "F":
+                lvl.set_goal(x, y)
+            # "." = nothing
+    sr, sc = start
+    lvl.set_player(sc, sr)
+    for tr, tc, text in tokens:
+        kind, value = MAP_TOKENS[text]
+        lvl.add_object(CodeBlock(tc, tr, kind, value))
+    lvl.recompile_circuits()
+    return lvl
+
+
+def _flip_value_block(lvl: Level, entry: dict, text: str) -> None:
+    """Toggle a VALUE token block (False<->True) in a built level.
+
+    `maps_data.py` stays a faithful port of the HTML; deliberate
+    deviations live here. Recompiles afterwards.
+    """
+    for tr, tc, t in entry["tokens"]:
+        if t == text:
+            blk = lvl.block_at(tc, tr)
+            assert blk is not None and blk.kind == VALUE, (tr, tc, t)
+            assert isinstance(blk.value, bool), (tr, tc, t)
+            blk.value = not blk.value
+            lvl.recompile_circuits()
+            return
+    raise AssertionError(f"token {text!r} not found")
 
 
 def build_level1() -> Level:
@@ -177,7 +259,7 @@ def build_level4() -> Level:
     the new one blooms (only one flag exists at a time).
     """
     W, H = 28, 12
-    lvl = Level("4 - Spacious Statements", W, H, DEFAULT_REGISTRY)
+    lvl = Level("4 - If one path closes, another opens. ", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
     lvl.set_player(1, 10)
     lvl.set_goal(26, 10)
@@ -236,4 +318,74 @@ def build_level4() -> Level:
     return lvl
 
 
-ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4]
+def build_level5() -> Level:
+    """
+    Three rooms with a NOT vault and a trap (global rules).  Intended
+    solution: True down into the Path rule (Path.solid = True -- safe
+    floor), True up into the Door rule (door opens), cross the middle
+    room and drop through a table gap into the vault, push NOT up and
+    right into the Trap rule slot, push True up beside it (Trap.lethal
+    = NOT True = False), cross the harmless trap to the flag.
+    Introduces the NOT token.  (The HTML map has a False feeding the
+    Path rule; here it is a True so the tables seal instead of opening
+    into voids.)
+    """
+    e = MAPS[1]
+    lvl = _build_from_map("5 - NOT Vault, Trap",
+                          e["rows"], e["start"], e["tokens"])
+    _flip_value_block(lvl, e, "False")
+    return lvl
+
+
+def build_level6() -> Level:
+    """
+    Serpentine vault (global rules).  Intended solution: push the first
+    NOT up into the Path rule (Path.solid = NOT True = False -- the gap
+    table becomes a void), walk in, push the second NOT up through the
+    wall opening into the Door rule, then push False up beside it
+    (Door.open = NOT False = True) and walk through the door to the
+    flag.  Both Path and Door rules use NOT.
+    """
+    e = MAPS[2]
+    lvl = _build_from_map("6 - Serpentine Vault",
+                          e["rows"], e["start"], e["tokens"])
+    # The first room's spare True is a False here (a decoy next to the
+    # Path slot; the solution still feeds the rule with NOT).
+    _flip_value_block(lvl, e, "True")
+    return lvl
+
+
+def build_level7() -> Level:
+    """
+    Swap the values (global rules).  Intended solution: push False down
+    out of the Door rule (registry reverts to Door.open = False),
+    carry it left and up into the Trap rule (Trap.lethal = False),
+    push True left into the empty Door slot (Door.open = True), drop
+    back to the corridor and cross the harmless trap through the open
+    door to the flag.  Teaches rule reversion and that a stray token
+    after the value is ignored.
+    """
+    e = MAPS[3]
+    return _build_from_map("7 - Swap the Values",
+                           e["rows"], e["start"], e["tokens"])
+
+
+def build_level8() -> Level:
+    """
+    Four chambers, three gates (global rules, 25x9).  Longest chain:
+    True up into the Door rule (opens), True right through the door
+    and down into the Path rule (Path.solid = True -- safe floor),
+    True down and right through the sealed table cell into room 3,
+    NOT up into the Trap slot, True up beside it (Trap.lethal = NOT
+    True = False), cross the harmless trap to the flag.  (The HTML
+    map feeds the Path rule with a False; here it is a True.)
+    """
+    e = MAPS[4]
+    lvl = _build_from_map("8 - Four Chambers, Three Gates",
+                          e["rows"], e["start"], e["tokens"])
+    _flip_value_block(lvl, e, "False")
+    return lvl
+
+
+ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4,
+              build_level5, build_level6, build_level7, build_level8]
