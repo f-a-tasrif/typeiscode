@@ -25,9 +25,14 @@ FLOOR_LINE     = "#242850"
 GOAL_GREEN     = "#2e8f4c"
 GOAL_FLAG      = "#4adc6e"
 GOAL_POLE      = "#c0c0c0"
-PLAYER_BODY    = "#f4f874"
-PLAYER_EYE     = "#333333"
-PLAYER_OUTLINE = "#c8c840"
+PLAYER_BODY    = "#a8a8b0"
+PLAYER_EYE     = "#ffffff"
+PLAYER_OUTLINE = "#0a0a0a"
+PLAYER_BLACK   = "#0a0a0a"
+PLAYER_COWL    = "#2e3a4e"
+PLAYER_SKIN    = "#f2c79b"
+PLAYER_SUIT    = "#a8a8b0"
+PLAYER_BELT    = "#f2d23c"
 PLATFORM_SOLID = "#7b5cff"
 PLATFORM_PILLAR= "#5a3fd6"
 PLATFORM_GHOST = "#574d87"
@@ -49,7 +54,8 @@ TRAP_SAFE_LINE = "#8d7080"
 EXPLOSION_CORE = "#fff08a"
 EXPLOSION_FIRE = "#ff9d2e"
 EXPLOSION_EDGE = "#e34b3e"
-FRAGMENT_COLOR = "#f4f874"
+FRAGMENT_COLOR = "#a8a8b0"
+FRAGMENT_OUTLINE = "#0a0a0a"
 BLOCK_BG       = "#1a3a6a"
 BLOCK_BORDER   = "#42a7ff"
 BLOCK_TEXT     = "#e8f0ff"
@@ -150,27 +156,62 @@ def draw_goal(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_player(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Yellow circle character with an eye."""
-    # floor underneath
+    """Batman chibi pixel character (from player's graph-paper design).
+
+    Dark cowl with bat ears + black outline, white eyes, peach lower
+    face, gray suit with black bat symbol, yellow utility belt, dark
+    gloves/boots. Drawn as chunky pixels so it reads clearly at any
+    cell size. No external assets required.
+    """
     draw_floor(canvas, x, y, size)
-    # body circle
-    m = max(2, size // 6)
-    cx, cy = x + size // 2, y + size // 2
-    r = size // 2 - m
-    canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
-                       fill=PLAYER_BODY, outline=PLAYER_OUTLINE, width=max(1, size // 20))
-    # eye
-    er = max(2, r // 4)
-    ex = cx + r // 4
-    ey = cy - r // 4
-    canvas.create_oval(ex - er, ey - er, ex + er, ey + er,
-                       fill=PLAYER_EYE, outline=PLAYER_EYE)
-    # highlight
-    hr = max(1, r // 5)
-    hx = cx - r // 3
-    hy = cy - r // 3
-    canvas.create_oval(hx - hr, hy - hr, hx + hr, hy + hr,
-                       fill="#fffff0", outline="#fffff0")
+
+    # 16 wide x 20 tall pixel map. '.' = transparent.
+    # K=black, C=cowl dark slate, W=white eye, S=skin peach,
+    # G=suit gray, Y=belt yellow.
+    PIX = [
+        "...KK......KK...",
+        "...KKCCCCCCKK...",
+        "..KCCCCCCCCCCK..",
+        "..KCCCCCCCCCCK..",
+        "..KCCCCCCCCCCK..",
+        "..KWWWWCCWWWWK..",
+        "..KWWWWCCWWWWK..",
+        "..KCCCCCCCCCCK..",
+        "..KKKKKKKKKKKK..",
+        "..KSSSSSSSSSSK..",
+        "..KSSSSSSSSSSK..",
+        "..KKKKKKKKKKKK..",
+        "..KGGGGGGGGGGK..",
+        ".KGGKKKKKKKKGGK.",
+        ".KGGKKKKKKKKGGK.",
+        ".KYYYYYYYYYYYYK.",
+        ".KCCCCCCCCCCCCK.",
+        ".KGGGKKKKKKGGGK.",
+        ".KCCCKKKKKKCCCK.",
+        "..KKKKKKKKKKKK..",
+    ]
+    COLORS = {
+        "K": PLAYER_BLACK,
+        "C": PLAYER_COWL,
+        "W": PLAYER_EYE,
+        "S": PLAYER_SKIN,
+        "G": PLAYER_SUIT,
+        "Y": PLAYER_BELT,
+    }
+    h = len(PIX)
+    w = len(PIX[0])
+    px = size / w
+    py = size / h
+    for j, row in enumerate(PIX):
+        for i, ch in enumerate(row):
+            if ch == "." or ch not in COLORS:
+                continue
+            x1 = x + i * px
+            y1 = y + j * py
+            x2 = x + (i + 1) * px + 0.5
+            y2 = y + (j + 1) * py + 0.5
+            canvas.create_rectangle(x1, y1, x2, y2,
+                                    fill=COLORS[ch], outline="")
 
 
 def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int):
@@ -194,15 +235,18 @@ def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int):
     canvas.create_oval(cx - core, cy - core, cx + core, cy + core,
                        fill=EXPLOSION_CORE, outline=EXPLOSION_CORE)
 
-    # The yellow fragments make the character visibly break apart.
+    # Deadpool suit fragments so the character visibly breaks apart.
     fragment = max(2, size // 11)
-    for dx, dy in ((-0.34, -0.31), (0.31, -0.25), (-0.38, 0.29), (0.35, 0.33)):
+    for dx, dy, col in ((-0.34, -0.31, FRAGMENT_COLOR),
+                        (0.31, -0.25, PLAYER_BLACK),
+                        (-0.38, 0.29, PLAYER_BLACK),
+                        (0.35, 0.33, FRAGMENT_COLOR)):
         fx, fy = cx + int(size * dx), cy + int(size * dy)
         canvas.create_polygon(fx, fy - fragment,
                               fx + fragment, fy,
                               fx, fy + fragment,
                               fx - fragment, fy,
-                              fill=FRAGMENT_COLOR, outline=PLAYER_OUTLINE)
+                              fill=col, outline=FRAGMENT_OUTLINE)
 
 
 def draw_platform_solid(canvas: tk.Canvas, x: int, y: int, size: int):

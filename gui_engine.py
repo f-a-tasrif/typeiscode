@@ -38,7 +38,7 @@ BOARD_PADDING  = 8
 
 # ── per-level hints (HINTS panel) ───────────────────────────────────
 # One entry per level in ALL_LEVELS, index-aligned with level_index.
-# Order follows ALL_LEVELS: 1,2,3,7,5,6,8,4.
+# Order follows ALL_LEVELS: 1,2,3,4,5,6,7,8.
 # Lines stay under ~44 characters so they fit the panel's text view.
 LEVEL_HINTS = [
     "The gap ahead is a void, not ground.\n"
@@ -81,12 +81,11 @@ LEVEL_HINTS = [
     "3.  NOT up, True beside it: trap off.\n"
     "Cross to the flag.",
 
-    "Both statements need fixing: seal the\n"
-    "void (isSolid = true) and open the Door\n"
-    "(isOpen = true).  The corridor goal is\n"
-    "mined — fuse a new GOAL by pushing the\n"
-    "Path. and open tokens together.  One\n"
-    "contact is enough.",
+    "1. There lies hidden bombs,\n"
+        "where the player must succumb,\n"
+        "discovers a path without turning into crumbs.\n"
+    "2. Two meaningful blocks can be fused into one.\n"
+
 ]
 
 
