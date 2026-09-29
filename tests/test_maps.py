@@ -121,9 +121,11 @@ if __name__ == "__main__":
     ran = 0
     # MAPS[0] has no level (old level 5 was deleted); levels 5-8 use MAPS[1:].
     # Levels are built via their ALL_LEVELS builders so builder tweaks apply.
-    from levels_data import ALL_LEVELS
-    entries = [(5 + i, ALL_LEVELS[4 + i], entry)
-               for i, entry in enumerate(MAPS[1:])]
+    # Explicit builder mapping (independent of ALL_LEVELS order).
+    from levels_data import build_level5, build_level6, build_level7, build_level8
+    builders = [build_level5, build_level6, build_level7, build_level8]
+    entries = [(5 + i, builder, entry)
+               for i, (builder, entry) in enumerate(zip(builders, MAPS[1:]))]
     for level_no, builder, entry in entries:
         if only and level_no not in only:
             continue

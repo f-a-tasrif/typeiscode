@@ -38,6 +38,7 @@ BOARD_PADDING  = 8
 
 # ── per-level hints (HINTS panel) ───────────────────────────────────
 # One entry per level in ALL_LEVELS, index-aligned with level_index.
+# Order follows ALL_LEVELS: 1,2,3,7,5,6,8,4.
 # Lines stay under ~44 characters so they fit the panel's text view.
 LEVEL_HINTS = [
     "The gap ahead is a void, not ground.\n"
@@ -57,19 +58,10 @@ LEVEL_HINTS = [
     "(isSolid = true) using each room's\n"
     "spare block.",
 
-    "Both statements need fixing: seal the\n"
-    "void (isSolid = true) and open the Door\n"
-    "(isOpen = true).  The corridor goal is\n"
-    "mined — fuse a new GOAL by pushing the\n"
-    "Path. and open tokens together.  One\n"
-    "contact is enough.",
-
-    "Only two `false` blocks exist.  Swap\n"
-    "blue's false for the hub `true` to seal\n"
-    "the void, then feed that freed false\n"
-    "into the Wall statement: passable walls\n"
-    "open the sealed annex.  Its false arms\n"
-    "the Trap — walk the corridor to the flag.",
+    "Push False out of the Door rule (it\n"
+    "reverts to False), carry it to the\n"
+    "Trap rule, slide True into the Door\n"
+    "slot.  Back down and cross the trap.",
 
     "True down seals both tables (Path).\n"
     "True up opens the Door.  Drop into\n"
@@ -83,16 +75,18 @@ LEVEL_HINTS = [
     "rule, False beside it: NOT False is\n"
     "True.  Through the door.",
 
-    "Push False out of the Door rule (it\n"
-    "reverts to False), carry it to the\n"
-    "Trap rule, slide True into the Door\n"
-    "slot.  Back down and cross the trap.",
-
     "True opens Room 1's door.  True goes\n"
     "through it, down into the Path rule.\n"
     "True crosses the dead table to room\n"
     "3.  NOT up, True beside it: trap off.\n"
     "Cross to the flag.",
+
+    "Both statements need fixing: seal the\n"
+    "void (isSolid = true) and open the Door\n"
+    "(isOpen = true).  The corridor goal is\n"
+    "mined — fuse a new GOAL by pushing the\n"
+    "Path. and open tokens together.  One\n"
+    "contact is enough.",
 ]
 
 
@@ -334,9 +328,9 @@ class GUIEngine:
             help_text += ("\nRules read left to right in one row. "
                           "NOT flips the value after it.")
         self.help_view.set_text(help_text)
-        # Hints panel exists only on level 4 (index 3); it is hidden
-        # on every other level.
-        if self.level_index == 3 and not self.game_completed:
+        # Hints panel exists only on the fusion level (build_level4);
+        # it is hidden on every other level.
+        if self.current_builder().__name__ == "build_level4" and not self.game_completed:
             self.hints_label.pack(fill="x", padx=8, pady=3, anchor="nw")
             self.hints_view._text.pack(fill="x", padx=8, pady=2, anchor="nw")
             self.hints_view.set_text(LEVEL_HINTS[self.level_index])
