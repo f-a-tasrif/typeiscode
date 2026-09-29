@@ -126,7 +126,7 @@ def build_level1() -> Level:
     ground and cross to the goal.
     """
     W, H = 16, 7
-    lvl = Level("1", W, H, DEFAULT_REGISTRY)
+    lvl = Level("1 - First Compile", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
     lvl.set_player(1, 5)
     lvl.set_goal(14, 5)
@@ -158,7 +158,7 @@ def build_level2() -> Level:
     to open it.
     """
     W, H = 16, 7
-    lvl = Level("2", W, H, DEFAULT_REGISTRY)
+    lvl = Level("2 - Open Sesame", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
     lvl.set_player(1, 5)
     lvl.set_goal(14, 5)
@@ -191,7 +191,7 @@ def build_level3() -> Level:
     before its own obstacle's column.
     """
     W, H = 28, 7
-    lvl = Level("3", W, H, DEFAULT_REGISTRY)
+    lvl = Level("3 - Two Statements", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
     lvl.set_player(1, 5)
     lvl.set_goal(26, 5)
@@ -237,75 +237,6 @@ def build_level3() -> Level:
 
 def build_level4() -> Level:
     """
-    Swap the values (global rules).  Intended solution: push False down
-    out of the Door rule (registry reverts to Door.open = False),
-    carry it left and up into the Trap rule (Trap.lethal = False),
-    push True left into the empty Door slot (Door.open = True), drop
-    back to the corridor and cross the harmless trap through the open
-    door to the flag.  Teaches rule reversion and that a stray token
-    after the value is ignored.
-        """
-    e = MAPS[3]
-    return _build_from_map("7",
-                            e["rows"], e["start"], e["tokens"])
-
-
-def build_level5() -> Level:
-    """
-    Three rooms with a NOT vault and a trap (global rules).  Intended
-    solution: True down into the Path rule (Path.solid = True -- safe
-    floor), True up into the Door rule (door opens), cross the middle
-    room and drop through a table gap into the vault, push NOT up and
-    right into the Trap rule slot, push True up beside it (Trap.lethal
-    = NOT True = False), cross the harmless trap to the flag.
-    Introduces the NOT token.  (The HTML map has a False feeding the
-    Path rule; here it is a True so the tables seal instead of opening
-    into voids.)
-    """
-    e = MAPS[1]
-    lvl = _build_from_map("5",
-                          e["rows"], e["start"], e["tokens"])
-    _flip_value_block(lvl, e, "False")
-    return lvl
-
-
-def build_level6() -> Level:
-    """
-    Serpentine vault (global rules).  Intended solution: push the first
-    NOT up into the Path rule (Path.solid = NOT True = False -- the gap
-    table becomes a void), walk in, push the second NOT up through the
-    wall opening into the Door rule, then push False up beside it
-    (Door.open = NOT False = True) and walk through the door to the
-    flag.  Both Path and Door rules use NOT.
-    """
-    e = MAPS[2]
-    lvl = _build_from_map("6",
-                          e["rows"], e["start"], e["tokens"])
-    # The first room's spare True is a False here (a decoy next to the
-    # Path slot; the solution still feeds the rule with NOT).
-    _flip_value_block(lvl, e, "True")
-    return lvl
-
-
-def build_level7() -> Level:
-    """
-    Four chambers, three gates (global rules, 25x9).  Longest chain:
-    True up into the Door rule (opens), True right through the door
-    and down into the Path rule (Path.solid = True -- safe floor),
-    True down and right through the sealed table cell into room 3,
-    NOT up into the Trap slot, True up beside it (Trap.lethal = NOT
-    True = False), cross the harmless trap to the flag.  (The HTML
-    map feeds the Path rule with a False; here it is a True.)
-    """
-    e = MAPS[4]
-    lvl = _build_from_map("8",
-                          e["rows"], e["start"], e["tokens"])
-    _flip_value_block(lvl, e, "False")
-    return lvl
-
-
-def build_level8() -> Level:
-    """
     Same design as level 3 (two obstacles in sequence, each with its own
     workshop) but with a much taller upper floor: the workshop room grows
     from 3 rows of play space to 8, so every block can be pushed, spun
@@ -328,7 +259,7 @@ def build_level8() -> Level:
     the new one blooms (only one flag exists at a time).
     """
     W, H = 28, 12
-    lvl = Level("8 - If one path closes, another opens. ", W, H, DEFAULT_REGISTRY)
+    lvl = Level("4 - If one path closes, another opens. ", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
     lvl.set_player(1, 10)
     lvl.set_goal(26, 10)
@@ -344,7 +275,7 @@ def build_level8() -> Level:
     # The bottom wall of the second workshop gets BorderMine booms inside
     # its cells, same as the outer wall: with Wall.solid = False the player
     # still dies trying to walk through it, and blocks can't be pushed into
-    # it either. Leaves the doorway at doorB open.
+    # it either.  Leaves the doorway at doorB open.
     for x in range(13, W - 1):
         if x != doorB:
             lvl.add_object(BorderMine(x, 9))
@@ -384,6 +315,75 @@ def build_level8() -> Level:
     lvl.add_object(CodeBlock(21, 5, VALUE, True))   # spare correction block
 
     lvl.recompile_circuits()
+    return lvl
+
+
+def build_level5() -> Level:
+    """
+    Three rooms with a NOT vault and a trap (global rules).  Intended
+    solution: True down into the Path rule (Path.solid = True -- safe
+    floor), True up into the Door rule (door opens), cross the middle
+    room and drop through a table gap into the vault, push NOT up and
+    right into the Trap rule slot, push True up beside it (Trap.lethal
+    = NOT True = False), cross the harmless trap to the flag.
+    Introduces the NOT token.  (The HTML map has a False feeding the
+    Path rule; here it is a True so the tables seal instead of opening
+    into voids.)
+    """
+    e = MAPS[1]
+    lvl = _build_from_map("5 - NOT Vault, Trap",
+                          e["rows"], e["start"], e["tokens"])
+    _flip_value_block(lvl, e, "False")
+    return lvl
+
+
+def build_level6() -> Level:
+    """
+    Serpentine vault (global rules).  Intended solution: push the first
+    NOT up into the Path rule (Path.solid = NOT True = False -- the gap
+    table becomes a void), walk in, push the second NOT up through the
+    wall opening into the Door rule, then push False up beside it
+    (Door.open = NOT False = True) and walk through the door to the
+    flag.  Both Path and Door rules use NOT.
+    """
+    e = MAPS[2]
+    lvl = _build_from_map("6 - Serpentine Vault",
+                          e["rows"], e["start"], e["tokens"])
+    # The first room's spare True is a False here (a decoy next to the
+    # Path slot; the solution still feeds the rule with NOT).
+    _flip_value_block(lvl, e, "True")
+    return lvl
+
+
+def build_level7() -> Level:
+    """
+    Swap the values (global rules).  Intended solution: push False down
+    out of the Door rule (registry reverts to Door.open = False),
+    carry it left and up into the Trap rule (Trap.lethal = False),
+    push True left into the empty Door slot (Door.open = True), drop
+    back to the corridor and cross the harmless trap through the open
+    door to the flag.  Teaches rule reversion and that a stray token
+    after the value is ignored.
+    """
+    e = MAPS[3]
+    return _build_from_map("7 - Swap the Values",
+                           e["rows"], e["start"], e["tokens"])
+
+
+def build_level8() -> Level:
+    """
+    Four chambers, three gates (global rules, 25x9).  Longest chain:
+    True up into the Door rule (opens), True right through the door
+    and down into the Path rule (Path.solid = True -- safe floor),
+    True down and right through the sealed table cell into room 3,
+    NOT up into the Trap slot, True up beside it (Trap.lethal = NOT
+    True = False), cross the harmless trap to the flag.  (The HTML
+    map feeds the Path rule with a False; here it is a True.)
+    """
+    e = MAPS[4]
+    lvl = _build_from_map("8 - Four Chambers, Three Gates",
+                          e["rows"], e["start"], e["tokens"])
+    _flip_value_block(lvl, e, "False")
     return lvl
 
 
