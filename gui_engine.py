@@ -328,9 +328,9 @@ class GUIEngine:
             help_text += ("\nRules read left to right in one row. "
                           "NOT flips the value after it.")
         self.help_view.set_text(help_text)
-        # Hints panel exists only on the fusion level (build_level4);
+        # Hints panel exists only on level 8 (build_level8);
         # it is hidden on every other level.
-        if self.current_builder().__name__ == "build_level4" and not self.game_completed:
+        if self.current_builder().__name__ == "build_level8" and not self.game_completed:
             self.hints_label.pack(fill="x", padx=8, pady=3, anchor="nw")
             self.hints_view._text.pack(fill="x", padx=8, pady=2, anchor="nw")
             self.hints_view.set_text(LEVEL_HINTS[self.level_index])
