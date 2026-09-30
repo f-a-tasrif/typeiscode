@@ -20,7 +20,7 @@ Layout pattern used by every level ("workshop + corridor"):
 """
 
 from level import Level
-from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor
+from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor, SealWall, Stone
 from blocks import CodeBlock, CircuitLine, CLASS, PROP, OP, VALUE, NOT
 from maps_data import MAPS
 
@@ -33,6 +33,8 @@ DEFAULT_REGISTRY = {
     "Platform": {"isSolid": False},
     "Door": {"isOpen": False},
     "Trap": {"isLethal": True},
+    "Stone": {"solid": True},
+    "Seal": {"active": True},
 }
 
 RULES_REGISTRY = {
@@ -44,6 +46,8 @@ RULES_REGISTRY = {
     "Platform": {"isSolid": False},
     "Door": {"isOpen": False},
     "Trap": {"isLethal": True},
+    "Stone": {"solid": True},
+    "Seal": {"active": True},
 }
 
 # -- data-driven global levels (levels 5+) ------------------------------
@@ -52,9 +56,12 @@ MAP_TOKENS: dict[str, tuple[str, object]] = {
     "Path.": (CLASS, "Platform"),
     "Door.": (CLASS, "Door"),
     "Trap.": (CLASS, "Trap"),
+    "Stone.": (CLASS, "Stone"),
+    "Seal.": (CLASS, "Seal"),
     "solid": (PROP, "isSolid"),
     "open": (PROP, "isOpen"),
     "lethal": (PROP, "isLethal"),
+    "active": (PROP, "active"),
     "=": (OP, "="),
     "True": (VALUE, True),
     "False": (VALUE, False),
@@ -63,7 +70,8 @@ MAP_TOKENS: dict[str, tuple[str, object]] = {
 
 
 def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
-                    tokens: list[tuple[int, int, str]]) -> Level:
+                    tokens: list[tuple[int, int, str]], warp: list | None = None,
+                    stone_mode: bool = False) -> Level:
     """Build a global-rules level from HTML map data.
 
     `rows` are ASCII map rows, `start` is (row, col), `tokens` are
@@ -71,6 +79,10 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
     border is added (nothing in these levels can make walls passable,
     so no BorderMines are needed) and no CircuitLine objects are used:
     rules compile from statements found anywhere on the board.
+
+    stone_mode: when True (map8/level 9), `T` cells are Stone blocks
+    (blocking while Stone.solid = True, like the HTML's orange stone);
+    otherwise `T` is a Platform void trap as in the earlier maps.
     """
     W, H = len(rows[0]), len(rows)
     lvl = Level(name, W, H, RULES_REGISTRY)
@@ -81,21 +93,35 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
             if ch == "#":
                 lvl.add_wall(x, y)
             elif ch == "T":
-                # Level 1's own path trap: safe floor while
-                # Path.solid = True, lethal void while False.
-                lvl.add_object(Platform(x, y))
+                if stone_mode:
+                    lvl.add_object(Stone(x, y))
+                else:
+                    # Level 1's own path trap: safe floor while
+                    # Path.solid = True, lethal void while False.
+                    lvl.add_object(Platform(x, y))
             elif ch == "D":
                 lvl.add_object(Door(x, y))
             elif ch == "X":
                 lvl.add_object(Trap(x, y))
             elif ch == "F":
                 lvl.set_goal(x, y)
+            elif ch == "M":
+                lvl.add_object(HiddenBoom(x, y))
+            elif ch == "B":
+                lvl.add_wall(x, y)
+                lvl.add_object(BorderMine(x, y))
+            elif ch == "S":
+                lvl.add_object(SealWall(x, y))
             # "." = nothing
     sr, sc = start
     lvl.set_player(sc, sr)
     for tr, tc, text in tokens:
         kind, value = MAP_TOKENS[text]
         lvl.add_object(CodeBlock(tc, tr, kind, value))
+    for w in (warp or []):
+        # w = [row1, col1, row2, col2]
+        lvl.add_warp_pair(w[1], w[0], w[3], w[2])
+        # note: maps_data uses [row, col] order; Level uses (x=col, y=row)
     lvl.recompile_circuits()
     return lvl
 
@@ -388,5 +414,15 @@ def build_level8() -> Level:
 
 
 
+def build_level9() -> Level:
+    e = MAPS[5]
+    lvl = _build_from_map("9 - Vault cathedral", e["rows"], e["start"], e["tokens"],
+                          stone_mode=True)
+    for w in e.get("warp", []):
+        lvl.add_warp_pair(w[1], w[0], w[3], w[2])
+    return lvl
+
+
 ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4,
-              build_level5, build_level6, build_level7, build_level8]
+              build_level5, build_level6, build_level7, build_level8,
+              build_level9]

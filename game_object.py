@@ -148,6 +148,60 @@ class Trap(GameObject):
         return self.GLYPH_ON if self.is_lethal() else self.GLYPH_OFF
 
 
+class Stone(GameObject):
+    """A stone block that is blocking while Stone.solid = True.
+    While False the stone vanishes (plain floor) and reappears
+    as soon as the logic flips back, like SealWall."""
+    GLYPH_ON = "STON"
+    GLYPH_OFF = "    "
+
+    def __init__(self, x, y):
+        super().__init__(x, y, movable=False)
+
+    def is_blocking(self) -> bool:
+        return bool(PropertyRegistry.get("Stone", "solid", True))
+
+    def glyph(self) -> str:
+        return self.GLYPH_ON if self.is_blocking() else self.GLYPH_OFF
+
+
+class SealWall(GameObject):
+    """A wall cell that is blocking while Seal.active = True, open while False.
+    Acts like a Wall when sealed, like a Floor when unsealed."""
+    GLYPH_SEALED = "SEAL"
+    GLYPH_OPEN = "    "
+
+    def __init__(self, x, y):
+        super().__init__(x, y, movable=False)
+
+    def is_blocking(self) -> bool:
+        return bool(PropertyRegistry.get("Seal", "active", True))
+
+    def is_lethal(self) -> bool:
+        return False
+
+    def glyph(self) -> str:
+        return self.GLYPH_SEALED if self.is_blocking() else self.GLYPH_OPEN
+
+
+class Warp(GameObject):
+    """An invisible portal tile. Teleports the player to its paired Warp.
+    Blocks cannot be pushed onto a Warp (enforced in level.py).
+    The glyph is blank so it renders as floor."""
+    GLYPH = "    "
+
+    def __init__(self, x, y, pair_x: int, pair_y: int):
+        super().__init__(x, y, movable=False)
+        self.pair_x = pair_x
+        self.pair_y = pair_y
+
+    def is_blocking(self) -> bool:
+        return False
+
+    def is_lethal(self) -> bool:
+        return False
+
+
 class HiddenBoom(Trap):
     """An armed trap that is invisible until the player steps on it."""
 

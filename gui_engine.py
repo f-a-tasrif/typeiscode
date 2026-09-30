@@ -19,6 +19,8 @@ from tile_renderer import (
     draw_trap_lethal, draw_trap_safe,
     draw_boom_explosion,
     draw_code_block,
+    draw_stone,
+    draw_seal_wall, draw_warp, draw_mine,
 )
 
 # ── colour tokens (info-panel only) ─────────────────────────────────
@@ -39,53 +41,29 @@ BOARD_PADDING  = 8
 
 # ── per-level hints (HINTS panel) ───────────────────────────────────
 # One entry per level in ALL_LEVELS, index-aligned with level_index.
-# Order follows ALL_LEVELS: 1,2,3,4,5,6,7,8.
-# Lines stay under ~44 characters so they fit the panel's text view.
+# Only level 8 carries hint text; all other entries are blank and the
+# HINTS section stays hidden on those levels.
 LEVEL_HINTS = [
-    "The gap ahead is a void, not ground.\n"
-    "It obeys the circuit: Platform.isSolid\n"
-    "is false.  Push the spare `true` block\n"
-    "into the empty slot to seal it.",
+    "",
 
-    "The Door stays shut while Door.isOpen\n"
-    "is false.  Push the spare `true` block\n"
-    "into the statement's last slot and the\n"
-    "door swings open.",
+    "",
 
-    "Two problems, two workshops — each\n"
-    "room must be cleared before the\n"
-    "obstacle it controls.  Disarm the trap\n"
-    "(isLethal = false), then seal the void\n"
-    "(isSolid = true) using each room's\n"
-    "spare block.",
+    "",
 
-    "Push False out of the Door rule (it\n"
-    "reverts to False), carry it to the\n"
-    "Trap rule, slide True into the Door\n"
-    "slot.  Back down and cross the trap.",
+    "",
 
-    "True down seals both tables (Path).\n"
-    "True up opens the Door.  Drop into\n"
-    "the vault, push NOT up-right into\n"
-    "the Trap slot, True beside it: NOT\n"
-    "True is False.  Cross the trap.",
+    "",
 
-    "Push NOT up into the Path rule: NOT\n"
-    "True is False, the gap table goes.\n"
-    "Push the second NOT up into the Door\n"
-    "rule, False beside it: NOT False is\n"
-    "True.  Through the door.",
+    "",
 
-    "True opens Room 1's door.  True goes\n"
-    "through it, down into the Path rule.\n"
-    "True crosses the dead table to room\n"
-    "3.  NOT up, True beside it: trap off.\n"
-    "Cross to the flag.",
+    "",
 
     "1. There lies hidden bombs,\n"
         "where the player must succumb,\n"
         "discovers a path without turning into crumbs.\n"
-    "2. Two meaningful blocks can be fused into one.\n"
+    "2. Two meaningful blocks can be fused into one.\n",
+
+    "",
 
 ]
 
@@ -100,6 +78,7 @@ class GUIEngine:
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
         self._last_message = ""
+        self._show_warps = True
 
         # window + layout
         self.window = Window("Type Is Code", 1280, 680, bg=BACKGROUND,
@@ -129,7 +108,7 @@ class GUIEngine:
             "🎮 Controls", font=("Consolas", 14, "bold"),
             fg=ACCENT, bg=PANEL_BG)
         self.help_view = self.info_frame.add_text_view(
-            width=44, height=10, font=("Consolas", 12),
+            width=44, height=7, font=("Consolas", 12),
             fg=TEXT_BODY, bg=PANEL_SECTION)
         self.hints_label = self.info_frame.add_label(
             "💡 HINTS", font=("Consolas", 14, "bold"),
@@ -233,6 +212,25 @@ class GUIEngine:
                             draw_void(raw, px, py, cell)
                         else:
                             draw_floor(raw, px, py, cell)
+                    elif tcls == "Stone":
+                        if terr.is_blocking():
+                            draw_stone(raw, px, py, cell)
+                        else:
+                            draw_floor(raw, px, py, cell)
+                    elif tcls == "SealWall":
+                        if terr.is_blocking():
+                            draw_seal_wall(raw, px, py, cell)
+                        else:
+                            draw_floor(raw, px, py, cell)
+                    elif tcls == "Warp":
+                        # Portals are visible by default (P toggles reveal/hide).
+                        if getattr(self, "_show_warps", True):
+                            draw_warp(raw, px, py, cell)
+                        # else: drawn as plain floor (background tile already drawn in step 1)
+                    elif tcls == "HiddenBoom":
+                        # Land mines stay visible in global levels (level 9):
+                        # pixel-bomb marker on the floor.
+                        draw_mine(raw, px, py, cell)
 
                     # 3. block layer on top
                     blk = self.level.block_at(gx, gy)
@@ -304,6 +302,21 @@ class GUIEngine:
                                 draw_trap_lethal(raw, px, py, cell)
                             else:
                                 draw_trap_safe(raw, px, py, cell)
+                        elif cls == "Stone":
+                            if occ.is_blocking():
+                                draw_stone(raw, px, py, cell)
+                            else:
+                                draw_floor(raw, px, py, cell)
+                        elif cls == "SealWall":
+                            if occ.is_blocking():
+                                draw_seal_wall(raw, px, py, cell)
+                            else:
+                                draw_floor(raw, px, py, cell)
+                        elif cls == "Warp":
+                            # Portals are visible by default (P toggles reveal/hide).
+                            if getattr(self, "_show_warps", True):
+                                draw_warp(raw, px, py, cell)
+                            # else: drawn as plain floor (background tile already drawn in step 1)
                         elif cls == "CodeBlock":
                             label = occ.glyph().strip()
                             kind = occ.kind
@@ -329,27 +342,31 @@ class GUIEngine:
                 self.message_label.pack(fill="x", padx=12, pady=5, anchor="nw")
         else:
             self.message_label.pack_forget()
+        press = getattr(self.level, "fusion_press_count", 0)
+        if press > 0:
+            self.message_label.configure(
+                text=f"⚙ Stone. + open: {press}/3 presses to fuse",
+                fg=ACCENT)
+            if not self.message_label.winfo_ismapped():
+                self.message_label.pack(fill="x", padx=12, pady=5, anchor="nw")
         help_text = (
             "W / ↑  = up        A / ← = left\n"
             "S / ↓  = down      D / → = right\n"
             "R = restart level\n"
             "Q = quit\n\n"
             "Push code blocks onto the circuit line so\n"
-            "the statement compiles.  CLASS PROP = VALUE\n"
-            "Put Path. next to open = they fuse into a new GOAL"
+            "the statement compiles.  CLASS PROP = VALUE"
         )
-        if getattr(self.level, "rule_mode", "circuit") == "global":
-            help_text += ("\nRules read left to right in one row. "
-                          "NOT flips the value after it.")
         self.help_view.set_text(help_text)
-        # Hints panel is visible on every level, using the
-        # index-aligned LEVEL_HINTS entry for the current level.
-        if not self.game_completed and 0 <= self.level_index < len(LEVEL_HINTS):
+        # Hints panel shows only when the current level carries hint
+        # text (currently level 8); otherwise the section stays hidden.
+        hint = LEVEL_HINTS[self.level_index] if 0 <= self.level_index < len(LEVEL_HINTS) else ""
+        if not self.game_completed and hint:
             if not self.hints_label.winfo_ismapped():
                 self.hints_label.pack(fill="x", padx=12, pady=5, anchor="nw")
             if not self.hints_view._text.winfo_ismapped():
                 self.hints_view._text.pack(fill="x", padx=12, pady=4, anchor="nw")
-            self.hints_view.set_text(LEVEL_HINTS[self.level_index])
+            self.hints_view.set_text(hint)
         else:
             self.hints_label.pack_forget()
             self.hints_view._text.pack_forget()
@@ -371,6 +388,10 @@ class GUIEngine:
             self.restart_level(from_start=from_start)
             msg = "Game restarted from Level 1." if from_start else "Level restarted."
             self.render_frame(msg)
+            return
+        if key == "p":
+            self._show_warps = not getattr(self, "_show_warps", False)
+            self.render_frame("Portals " + ("revealed." if self._show_warps else "hidden."))
             return
         if key not in ("w", "a", "s", "d"):
             return

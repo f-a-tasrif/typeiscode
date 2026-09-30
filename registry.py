@@ -17,6 +17,8 @@ class PropertyRegistry:
         "Platform": {"isSolid": False},
         "Door": {"isOpen": False},
         "Trap": {"isLethal": True},
+        "Stone": {"solid": True},
+        "Seal": {"active": True},
     }
 
     #: Some property tokens render with the SAME glyph but spell the key
@@ -27,6 +29,7 @@ class PropertyRegistry:
     _ALIASES: dict[str, dict[str, str]] = {
         "Wall": {"isSolid": "solid"},
         "Platform": {"solid": "isSolid"},
+        "Stone": {"isSolid": "solid"},
     }
 
     #: history log of every successful compile, useful for the UI / debugging

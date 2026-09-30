@@ -14,8 +14,17 @@ the cell side-length in pixels.
 """
 
 from __future__ import annotations
-import tkinter as tk
 import math
+import os
+import tkinter as tk
+
+try:
+    from PIL import Image as _PILImage, ImageTk as _PILImageTk
+    _PIL_AVAILABLE = True
+except ImportError:  # pragma: no cover - Pillow is optional
+    _PILImage = None
+    _PILImageTk = None
+    _PIL_AVAILABLE = False
 
 # ── colour palette ───────────────────────────────────────────────────
 WALL_BASE      = "#3b3f5e"
@@ -66,6 +75,12 @@ EXPLOSION_FIRE = "#ff9d2e"
 EXPLOSION_EDGE = "#e34b3e"
 FRAGMENT_COLOR = "#a8a8b0"
 FRAGMENT_OUTLINE = "#0a0a0a"
+STONE_BASE     = "#7a4f2a"
+STONE_OUTLINE  = "#5a3010"
+STONE_HI       = "#b07040"
+STONE_SHADOW   = "#3a1a08"
+SEAL_PURPLE    = "#8b5cf6"
+WARP_INDIGO    = "#6366f1"
 BLOCK_BG       = "#1a3a6a"
 BLOCK_BORDER   = "#42a7ff"
 BLOCK_TEXT     = "#e8f0ff"
@@ -467,3 +482,222 @@ def draw_circuit_slot(canvas: tk.Canvas, x: int, y: int, size: int):
     dr = max(1, size // 16)
     canvas.create_oval(cx - dr, cy - dr, cx + dr, cy + dr,
                        fill=CIRCUIT_SLOT_BORDER, outline=CIRCUIT_SLOT_BORDER)
+
+
+def draw_stone(canvas: tk.Canvas, x: int, y: int, size: int):
+    """Solid stone block — brownish-orange, like the HTML's orange stone."""
+    canvas.create_rectangle(x, y, x + size, y + size,
+                            fill=STONE_BASE, outline=STONE_OUTLINE, width=1)
+    # highlight bevel on top-left edges
+    bw = max(1, size // 12)
+    canvas.create_line(x + 1, y + 1, x + size - 1, y + 1,
+                       fill=STONE_HI, width=bw)
+    canvas.create_line(x + 1, y + 1, x + 1, y + size - 1,
+                       fill=STONE_HI, width=bw)
+    # shadow bevel on bottom-right edges
+    canvas.create_line(x + 1, y + size - 1, x + size - 1, y + size - 1,
+                       fill=STONE_SHADOW, width=bw)
+    canvas.create_line(x + size - 1, y + 1, x + size - 1, y + size - 1,
+                       fill=STONE_SHADOW, width=bw)
+    # 2 horizontal crack lines across the middle third for texture
+    cw = max(1, size // 24)
+    for frac in (0.42, 0.58):
+        cy = y + int(size * frac)
+        canvas.create_line(x + size // 6, cy,
+                           x + size * 5 // 6, cy + max(0, size // 48),
+                           fill=STONE_SHADOW, width=cw)
+
+
+def draw_stone_open(canvas: tk.Canvas, x: int, y: int, size: int):
+    """Stone block that is no longer solid — ghost/phantom outline."""
+    draw_floor(canvas, x, y, size)
+    m = max(2, size // 6)
+    w = max(1, size // 20)
+    canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
+                            fill="", outline=STONE_BASE,
+                            width=w, dash=(4, 3))
+    # "X" through the center in the same dashed style
+    canvas.create_line(x + m, y + m, x + size - m, y + size - m,
+                       fill=STONE_BASE, width=max(1, size // 24), dash=(4, 3))
+    canvas.create_line(x + m, y + size - m, x + size - m, y + m,
+                       fill=STONE_BASE, width=max(1, size // 24), dash=(4, 3))
+
+
+def draw_seal_wall(canvas: tk.Canvas, x: int, y: int, size: int):
+    """Sealed wall (active) — purple-striped wall tile like the HTML's 'sl' class."""
+    canvas.create_rectangle(x, y, x + size, y + size,
+                            fill=WALL_BASE, outline=WALL_MORTAR, width=1)
+    # diagonal purple stripes at 45°, clipped to the cell
+    step = max(4, size // 4)
+    w = max(1, size // 16)
+    for d in range(-size, size + 1, step):
+        if d >= 0:
+            x1, y1 = x + d, y
+            x2, y2 = x + size, y + size - d
+        else:
+            x1, y1 = x, y - d
+            x2, y2 = x + size + d, y + size
+        canvas.create_line(x1, y1, x2, y2, fill=SEAL_PURPLE, width=w)
+    if size >= 28:
+        canvas.create_text(x + size // 2, y + size // 2, text="🔒",
+                           font=("Arial", max(8, size // 3)), anchor="center")
+
+
+def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int):
+    """Hidden portal — blue oval ring from assets/portal.jpeg.
+
+    The photo is keyed (near-black -> transparent), autocropped and
+    fitted into the cell.  Without Pillow / the asset / a Tk root,
+    falls back to procedural indigo rings so tests stay headless-safe.
+    """
+    draw_floor(canvas, x, y, size)
+    photo = None
+    try:
+        photo = _portal_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
+    cx, cy = x + size // 2, y + size // 2
+    m = max(2, size // 8)
+    outer = max(3, size // 2 - m)
+    inner = max(2, outer // 2)
+    w = max(1, size // 20)
+    canvas.create_oval(cx - outer, cy - outer, cx + outer, cy + outer,
+                       fill="", outline=WARP_INDIGO, width=w, dash=(4, 3))
+    canvas.create_oval(cx - inner, cy - inner, cx + inner, cy + inner,
+                       fill="", outline=WARP_INDIGO, width=w, dash=(3, 3))
+    if size >= 24:
+        canvas.create_text(cx, cy, text="🌀",
+                           font=("Arial", max(8, size // 3)), anchor="center")
+
+
+def draw_mine(canvas: tk.Canvas, x: int, y: int, size: int):
+    """Visible land mine — pixel bomb from assets/boom.jpeg.
+
+    Without Pillow / the asset / a Tk root, falls back to the red
+    danger marker so tests stay headless-safe.
+    """
+    draw_floor(canvas, x, y, size)
+    photo = None
+    try:
+        photo = _boom_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
+    draw_trap_lethal(canvas, x, y, size)
+
+
+# ── portal photo support (assets/portal.jpeg) ─────────────────────────
+PORTAL_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "assets", "portal.jpeg")
+_portal_src = None      # cached RGBA PIL image, or False when unavailable
+_portal_photos: dict[int, object] = {}  # cell size -> PhotoImage
+
+
+def _load_portal_src():
+    """Load the portal photo keyed to RGBA (near-black -> transparent).
+
+    Returns a PIL RGBA image, or None when Pillow / the file is missing.
+    The result (including the miss) is cached.
+    """
+    global _portal_src
+    if _portal_src is not None:
+        return _portal_src or None
+    if not _PIL_AVAILABLE:
+        _portal_src = False
+        return None
+    try:
+        img = _PILImage.open(PORTAL_IMAGE).convert("RGB")
+    except (OSError, FileNotFoundError):
+        _portal_src = False
+        return None
+    gray = img.convert("L")
+    solid = gray.point(lambda v: 255 if v > 18 else 0)
+    bbox = solid.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+        gray = gray.crop(bbox)
+    # soft alpha ramp so the glow edge blends instead of clipping
+    alpha = gray.point(
+        lambda v: 0 if v <= 14 else (255 if v >= 56 else int((v - 14) * 255 / 42)))
+    img = img.convert("RGBA")
+    img.putalpha(alpha)
+    _portal_src = img
+    return img
+
+
+def _portal_photo(size: int):
+    """PhotoImage of the portal fitted into a `size`px cell (cached)."""
+    key = max(8, int(size))
+    if key in _portal_photos:
+        return _portal_photos[key]
+    src = _load_portal_src()
+    if src is None:
+        return None
+    side = max(8, int(size * 0.92))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    photo = _PILImageTk.PhotoImage(fit)
+    _portal_photos[key] = photo
+    return photo
+
+
+# ── land-mine photo support (assets/boom.jpeg, white background) ──────
+BOOM_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "assets", "boom.jpeg")
+_boom_src = None        # cached RGBA PIL image, or False when unavailable
+_boom_photos: dict[int, object] = {}  # cell size -> PhotoImage
+
+
+def _load_boom_src():
+    """Load the bomb photo keyed to RGBA (near-white -> transparent).
+
+    Returns a PIL RGBA image, or None when Pillow / the file is missing.
+    The result (including the miss) is cached.
+    """
+    global _boom_src
+    if _boom_src is not None:
+        return _boom_src or None
+    if not _PIL_AVAILABLE:
+        _boom_src = False
+        return None
+    try:
+        img = _PILImage.open(BOOM_IMAGE).convert("RGB")
+    except (OSError, FileNotFoundError):
+        _boom_src = False
+        return None
+    gray = img.convert("L")
+    content = gray.point(lambda v: 0 if v > 235 else 255)
+    bbox = content.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+        gray = gray.crop(bbox)
+    # soft alpha ramp so anti-aliased edges blend instead of clipping
+    alpha = gray.point(
+        lambda v: 0 if v >= 245 else (255 if v <= 190 else int((245 - v) * 255 / 55)))
+    img = img.convert("RGBA")
+    img.putalpha(alpha)
+    _boom_src = img
+    return img
+
+
+def _boom_photo(size: int):
+    """PhotoImage of the bomb fitted into a `size`px cell (cached)."""
+    key = max(8, int(size))
+    if key in _boom_photos:
+        return _boom_photos[key]
+    src = _load_boom_src()
+    if src is None:
+        return None
+    side = max(8, int(size * 0.92))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    photo = _PILImageTk.PhotoImage(fit)
+    _boom_photos[key] = photo
+    return photo
