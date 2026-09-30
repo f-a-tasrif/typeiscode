@@ -24,10 +24,11 @@ from tile_renderer import (
 # ── colour tokens (info-panel only) ─────────────────────────────────
 BACKGROUND     = "#0f1323"
 PANEL_BG       = "#111528"
-PANEL_SECTION  = "#181e3a"
-TEXT_COLOR      = "#e0e4ff"
-TEXT_DIM        = "#8890b0"
-ACCENT         = "#5f7fff"
+PANEL_SECTION  = "#1d2447"
+TEXT_COLOR      = "#eef1ff"
+TEXT_BODY       = "#d9defa"
+TEXT_DIM        = "#a8b0d0"
+ACCENT         = "#8aa2ff"
 SUCCESS_COLOR   = "#4adc6e"
 DANGER_COLOR    = "#e05565"
 
@@ -101,8 +102,8 @@ class GUIEngine:
         self._last_message = ""
 
         # window + layout
-        self.window = Window("Type Is Code", 1200, 640, bg=BACKGROUND,
-                             min_width=900, min_height=480)
+        self.window = Window("Type Is Code", 1280, 680, bg=BACKGROUND,
+                             min_width=980, min_height=560)
         self.canvas = self.window.create_canvas(bg=BOARD_BG)
         self._build_info_panel()
 
@@ -115,21 +116,27 @@ class GUIEngine:
         self.window.root.after(50, lambda: self.render_frame(self._last_message))
 
     def _build_info_panel(self):
-        self.info_frame = self.window.create_frame(width=380)
+        self.info_frame = self.window.create_frame(width=430)
         self.status_label = self.info_frame.add_label(
-            "", font=("Consolas", 14, "bold"), fg=TEXT_COLOR, bg=PANEL_BG)
+            "", font=("Consolas", 16, "bold"), fg=TEXT_COLOR, bg=PANEL_BG,
+            wraplength=405)
         self.moves_label = self.info_frame.add_label(
-            "", font=("Consolas", 11), fg=TEXT_DIM, bg=PANEL_BG)
+            "", font=("Consolas", 13), fg=TEXT_DIM, bg=PANEL_BG)
+        self.message_label = self.info_frame.add_label(
+            "", font=("Consolas", 12, "italic"), fg=TEXT_BODY, bg=PANEL_BG,
+            wraplength=405)
         self.info_frame.add_label(
-            "🎮 Controls", font=("Consolas", 12, "bold"),
+            "🎮 Controls", font=("Consolas", 14, "bold"),
             fg=ACCENT, bg=PANEL_BG)
         self.help_view = self.info_frame.add_text_view(
-            width=44, height=6, fg=TEXT_DIM, bg=PANEL_SECTION)
+            width=44, height=10, font=("Consolas", 12),
+            fg=TEXT_BODY, bg=PANEL_SECTION)
         self.hints_label = self.info_frame.add_label(
-            "💡 HINTS", font=("Consolas", 12, "bold"),
+            "💡 HINTS", font=("Consolas", 14, "bold"),
             fg=ACCENT, bg=PANEL_BG)
         self.hints_view = self.info_frame.add_text_view(
-            width=44, height=5, fg=TEXT_DIM, bg=PANEL_SECTION)
+            width=44, height=8, font=("Consolas", 12),
+            fg=TEXT_BODY, bg=PANEL_SECTION)
 
     # ── level lifecycle ─────────────────────────────────────────────
     def current_builder(self):
@@ -314,6 +321,14 @@ class GUIEngine:
                 fg=TEXT_COLOR)
 
         self.moves_label.configure(text=f"Moves: {self.level.moves}")
+        # Game feedback message — previously stored but never shown.
+        if self._last_message:
+            msg_fg = DANGER_COLOR if self.level.dead else TEXT_BODY
+            self.message_label.configure(text=f"▶ {self._last_message}", fg=msg_fg)
+            if not self.message_label.winfo_ismapped():
+                self.message_label.pack(fill="x", padx=12, pady=5, anchor="nw")
+        else:
+            self.message_label.pack_forget()
         help_text = (
             "W / ↑  = up        A / ← = left\n"
             "S / ↓  = down      D / → = right\n"
@@ -327,11 +342,13 @@ class GUIEngine:
             help_text += ("\nRules read left to right in one row. "
                           "NOT flips the value after it.")
         self.help_view.set_text(help_text)
-        # Hints panel exists only on level 8 (build_level8);
-        # it is hidden on every other level.
-        if self.current_builder().__name__ == "build_level8" and not self.game_completed:
-            self.hints_label.pack(fill="x", padx=8, pady=3, anchor="nw")
-            self.hints_view._text.pack(fill="x", padx=8, pady=2, anchor="nw")
+        # Hints panel is visible on every level, using the
+        # index-aligned LEVEL_HINTS entry for the current level.
+        if not self.game_completed and 0 <= self.level_index < len(LEVEL_HINTS):
+            if not self.hints_label.winfo_ismapped():
+                self.hints_label.pack(fill="x", padx=12, pady=5, anchor="nw")
+            if not self.hints_view._text.winfo_ismapped():
+                self.hints_view._text.pack(fill="x", padx=12, pady=4, anchor="nw")
             self.hints_view.set_text(LEVEL_HINTS[self.level_index])
         else:
             self.hints_label.pack_forget()

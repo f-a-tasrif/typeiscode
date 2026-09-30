@@ -33,6 +33,16 @@ PLAYER_COWL    = "#2e3a4e"
 PLAYER_SKIN    = "#f2c79b"
 PLAYER_SUIT    = "#a8a8b0"
 PLAYER_BELT    = "#f2d23c"
+GOOMBA_OUTLINE = "#0a0a0a"
+GOOMBA_DARK    = "#5a3018"
+GOOMBA_BODY    = "#a65e2e"
+GOOMBA_LIGHT   = "#d18a4d"
+GOOMBA_EYE     = "#ffffff"
+GOOMBA_PUPIL   = "#101018"
+GOOMBA_FANG    = "#ffffff"
+GOOMBA_STEM    = "#e3cda3"
+GOOMBA_FOOT    = "#6b4423"
+GOOMBA_FOOT_HI = "#a67c3d"
 PLATFORM_SOLID = "#7b5cff"
 PLATFORM_PILLAR= "#5a3fd6"
 PLATFORM_GHOST = "#574d87"
@@ -156,47 +166,52 @@ def draw_goal(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_player(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Batman chibi pixel character (from player's graph-paper design).
+    """Goomba pixel character (from Downloads/goomba.png).
 
-    Dark cowl with bat ears + black outline, white eyes, peach lower
-    face, gray suit with black bat symbol, yellow utility belt, dark
-    gloves/boots. Drawn as chunky pixels so it reads clearly at any
-    cell size. No external assets required.
+    Brown mushroom body with dark outline, white eyes with dark
+    pupils and angry brows, small fangs, beige stem and brown feet.
+    Drawn as chunky pixels so it reads clearly at any cell size.
+    No external assets required.
     """
     draw_floor(canvas, x, y, size)
 
     # 16 wide x 20 tall pixel map. '.' = transparent.
-    # K=black, C=cowl dark slate, W=white eye, S=skin peach,
-    # G=suit gray, Y=belt yellow.
+    # K=outline black, D=dark brown shade, B=body brown,
+    # L=light highlight, W=eye white, P=pupil,
+    # F=fang white, T=stem beige, E=foot dark, O=foot highlight.
     PIX = [
-        "...KK......KK...",
-        "...KKCCCCCCKK...",
-        "..KCCCCCCCCCCK..",
-        "..KCCCCCCCCCCK..",
-        "..KCCCCCCCCCCK..",
-        "..KWWWWCCWWWWK..",
-        "..KWWWWCCWWWWK..",
-        "..KCCCCCCCCCCK..",
-        "..KKKKKKKKKKKK..",
-        "..KSSSSSSSSSSK..",
-        "..KSSSSSSSSSSK..",
-        "..KKKKKKKKKKKK..",
-        "..KGGGGGGGGGGK..",
-        ".KGGKKKKKKKKGGK.",
-        ".KGGKKKKKKKKGGK.",
-        ".KYYYYYYYYYYYYK.",
-        ".KCCCCCCCCCCCCK.",
-        ".KGGGKKKKKKGGGK.",
-        ".KCCCKKKKKKCCCK.",
-        "..KKKKKKKKKKKK..",
+        "....KKKKKKKK....",
+        "..KKBBBBBBBBKK..",
+        ".KBBLLBBBBBBDDK.",
+        ".KBLBBBBBBBBDDK.",
+        ".KBBBBBBBBBBDDK.",
+        ".KBBWWKKKWWWBDK.",
+        ".KBBWWWWWWWWBDK.",
+        ".KBBWWPWWWPWBDK.",
+        ".KBBWWPWWWPWBDK.",
+        ".KBBWWWWWWWWBDK.",
+        ".KBFBBBBBBBFBDK.",
+        ".KBBFFKKKFFBBDK.",
+        ".KBBBBBBBBBBDDK.",
+        "..KKBBBBBBBBKK..",
+        "...KKDDDDDDKK...",
+        ".KEETTTTTTEEEKK.",
+        ".KEOOOTTTTEOOOK.",
+        ".KEEOOOTTEOOEEK.",
+        ".KKEEEEEEEEEEKK.",
+        "...KKKKKKKKKK...",
     ]
     COLORS = {
-        "K": PLAYER_BLACK,
-        "C": PLAYER_COWL,
-        "W": PLAYER_EYE,
-        "S": PLAYER_SKIN,
-        "G": PLAYER_SUIT,
-        "Y": PLAYER_BELT,
+        "K": GOOMBA_OUTLINE,
+        "D": GOOMBA_DARK,
+        "B": GOOMBA_BODY,
+        "L": GOOMBA_LIGHT,
+        "W": GOOMBA_EYE,
+        "P": GOOMBA_PUPIL,
+        "F": GOOMBA_FANG,
+        "T": GOOMBA_STEM,
+        "E": GOOMBA_FOOT,
+        "O": GOOMBA_FOOT_HI,
     }
     h = len(PIX)
     w = len(PIX[0])
@@ -235,12 +250,12 @@ def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int):
     canvas.create_oval(cx - core, cy - core, cx + core, cy + core,
                        fill=EXPLOSION_CORE, outline=EXPLOSION_CORE)
 
-    # Deadpool suit fragments so the character visibly breaks apart.
+    # Goomba fragments so the character visibly breaks apart.
     fragment = max(2, size // 11)
-    for dx, dy, col in ((-0.34, -0.31, FRAGMENT_COLOR),
-                        (0.31, -0.25, PLAYER_BLACK),
-                        (-0.38, 0.29, PLAYER_BLACK),
-                        (0.35, 0.33, FRAGMENT_COLOR)):
+    for dx, dy, col in ((-0.34, -0.31, GOOMBA_BODY),
+                        (0.31, -0.25, GOOMBA_OUTLINE),
+                        (-0.38, 0.29, GOOMBA_OUTLINE),
+                        (0.35, 0.33, GOOMBA_BODY)):
         fx, fy = cx + int(size * dx), cy + int(size * dy)
         canvas.create_polygon(fx, fy - fragment,
                               fx + fragment, fy,

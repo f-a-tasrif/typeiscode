@@ -65,7 +65,7 @@ class Window:
         canvas.pack(side="left", fill="both", expand=True)
         return Canvas(canvas)
 
-    def create_frame(self, width: int = 380) -> "Frame":
+    def create_frame(self, width: int = 430) -> "Frame":
         frame = tk.Frame(self.root, bg=self._bg, width=width)
         frame.pack(side="right", fill="y")
         frame.pack_propagate(False)
@@ -139,10 +139,10 @@ class Frame:
             bg=bg or self._frame["bg"],
             justify="left",
             anchor=anchor,
-            font=font or ("Consolas", 11),
-            wraplength=wraplength or 360,
+            font=font or ("Consolas", 12),
+            wraplength=wraplength or 405,
         )
-        label.pack(fill="x", padx=8, pady=3, anchor="nw")
+        label.pack(fill="x", padx=12, pady=5, anchor="nw")
         return label
 
     def add_text_view(self, width: int = 44, height: int = 4,
@@ -154,13 +154,17 @@ class Frame:
             height=height,
             fg=fg,
             bg=bg or self._frame["bg"],
-            font=font or ("Consolas", 10),
+            font=font or ("Consolas", 12),
             wrap="word",
             bd=0,
             highlightthickness=0,
-            padx=6,
-            pady=4,
+            padx=10,
+            pady=8,
+            spacing1=3,
+            spacing2=2,
+            spacing3=3,
+            relief="flat",
         )
-        tk_text.pack(fill="x", padx=8, pady=2, anchor="nw")
+        tk_text.pack(fill="x", padx=12, pady=4, anchor="nw")
         tk_text.configure(state="disabled")
         return TextView(tk_text)
