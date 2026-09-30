@@ -19,6 +19,7 @@ class PropertyRegistry:
         "Trap": {"isLethal": True},
         "Stone": {"solid": True},
         "Seal": {"active": True},
+        "Flag": {"moved": False},
     }
 
     #: Some property tokens render with the SAME glyph but spell the key

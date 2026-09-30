@@ -12,6 +12,7 @@ canvas area.  Arrow keys are supported alongside W/A/S/D.
 from __future__ import annotations
 from graficial import Window
 from levels_data import ALL_LEVELS
+from registry import PropertyRegistry
 from tile_renderer import (
     draw_wall, draw_floor, draw_goal, draw_player,
     draw_void,
@@ -66,6 +67,11 @@ LEVEL_HINTS = [
 
     "",
 
+    "Relocating flag: the visible flag is a mined decoy.\n"
+    "1. Relay: open Door, disarm Trap, set Wall.solid = False.\n"
+    "2. Cross the floor wall; False into Stone rule: vanish.\n"
+    "3. True into Flag rule: Flag.moved = True, flag jumps.\n"
+    "4. Bottom-left portal nook, weave hard mines to the flag.",
 ]
 
 
@@ -165,7 +171,7 @@ class GUIEngine:
         avail_w = cw - 2 * BOARD_PADDING
         avail_h = ch - 2 * BOARD_PADDING
         cell = min(avail_w // cols, avail_h // rows)
-        cell = max(20, cell)  # never smaller than 20px
+        cell = max(12, cell)  # never smaller than 12px (wide levels must fit)
 
         board_w = cell * cols
         board_h = cell * rows
@@ -198,6 +204,10 @@ class GUIEngine:
         # block on top -> player.  The block chip is inset, so the terrain
         # rim (open door, vanished table) stays visible underneath.
         is_global = getattr(self.level, "rule_mode", "circuit") == "global"
+        # Relocated-flag state (map10): the visible Goals are decoys and
+        # the finish art belongs on the hidden chamber cell instead.
+        flag_moved = bool(PropertyRegistry.get("Flag", "moved", False))
+        flag2 = getattr(self.level, "flag2", None)
         if is_global:
             for gy in range(rows):
                 for gx in range(cols):
@@ -206,13 +216,18 @@ class GUIEngine:
                     tile = self.level.tile_at(gx, gy)
                     tile_cls = tile.__class__.__name__
 
-                    # 1. background tile
+                    # 1. background tile (decoy Goals read as floor relocated)
                     if tile_cls == "Wall":
                         draw_wall(raw, px, py, cell)
                     elif tile_cls == "Goal":
-                        draw_goal(raw, px, py, cell)
+                        if flag_moved:
+                            draw_floor(raw, px, py, cell)
+                        else:
+                            draw_goal(raw, px, py, cell)
                     else:
                         draw_floor(raw, px, py, cell)
+                        if flag_moved and flag2 is not None and (gx, gy) == flag2:
+                            draw_goal(raw, px, py, cell)
 
                     # 2. terrain layer
                     terr = self.level.terrain_at(gx, gy)
@@ -247,7 +262,7 @@ class GUIEngine:
                         if getattr(self, "_show_warps", True):
                             draw_warp(raw, px, py, cell)
                         # else: drawn as plain floor (background tile already drawn in step 1)
-                    elif tcls == "HiddenBoom":
+                    elif tcls in ("HiddenBoom", "HardMine"):
                         # Land mines stay visible in global levels (level 9):
                         # pixel-bomb marker on the floor.
                         draw_mine(raw, px, py, cell)
@@ -397,30 +412,27 @@ class GUIEngine:
         """Dress the whole side panel in the night art (darkened for text).
 
         Frame gaps show the full-panel slice; each header/status label
-        gets its own aligned slice behind its text.  Skipped (leaving the
-        flat colours) when geometry is unset or the art is unavailable.
+        gets its own aligned slice behind its text.  Repaints only when
+        the window/panel size changes — never from widget geometry, so
+        moves never visibly shift the panel.  Skipped (leaving the flat
+        colours) when geometry is unset or the art is unavailable.
         """
         try:
             frame = self.info_frame._frame
             root = self.window.root
+            win_w, win_h = root.winfo_width(), root.winfo_height()
+            panel_w, panel_h = frame.winfo_width(), frame.winfo_height()
+            if win_w < 50 or win_h < 50 or panel_w < 50 or panel_h < 50:
+                return
+            key = (win_w, win_h, panel_w, panel_h)
+            if key == self._panel_bg_key:
+                return
             root.update_idletasks()
             win_w, win_h = root.winfo_width(), root.winfo_height()
             panel_w, panel_h = frame.winfo_width(), frame.winfo_height()
             if win_w < 50 or win_h < 50 or panel_w < 50 or panel_h < 50:
                 return
-            tracked = (("status", self.status_label),
-                       ("moves", self.moves_label),
-                       ("message", self.message_label),
-                       ("controls", self.controls_label),
-                       ("hints", self.hints_label))
-            geom = []
-            for _, lab in tracked:
-                if not lab.winfo_ismapped():
-                    geom.append(None)
-                    continue
-                geom.append((lab.winfo_x(), lab.winfo_y(),
-                             lab.winfo_width(), lab.winfo_height()))
-            key = (win_w, win_h, panel_w, panel_h, tuple(geom))
+            key = (win_w, win_h, panel_w, panel_h)
             if key == self._panel_bg_key:
                 return
             self._panel_bg_key = key
@@ -428,10 +440,15 @@ class GUIEngine:
             if bg is None:
                 return
             self.info_frame.set_background(bg)
-            for (name, lab), g in zip(tracked, geom):
-                if g is None:
+            for name, lab in (("status", self.status_label),
+                              ("moves", self.moves_label),
+                              ("message", self.message_label),
+                              ("controls", self.controls_label),
+                              ("hints", self.hints_label)):
+                if not lab.winfo_ismapped():
                     continue
-                lx, ly, lw, lh = g
+                lx, ly, lw, lh = (lab.winfo_x(), lab.winfo_y(),
+                                  lab.winfo_width(), lab.winfo_height())
                 photo = get_panel_slice(lx, ly, lw, lh, win_w, win_h, panel_w)
                 if photo is None:
                     continue

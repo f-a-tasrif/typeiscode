@@ -26,6 +26,22 @@ except ImportError:  # pragma: no cover - Pillow is optional
     _PILImageTk = None
     _PIL_AVAILABLE = False
 
+# PhotoImages live on one Tk interpreter: when the default root changes
+# (a fresh GUIEngine), drop every cached photo so a later lookup can
+# never hand back an image that belongs to a dead interpreter.
+_photo_root = None
+
+
+def _check_photo_root():
+    """Clear all PhotoImage caches when the Tk root changed."""
+    global _photo_root
+    cur = tk._default_root
+    if cur is not _photo_root:
+        _portal_photos.clear()
+        _boom_photos.clear()
+        _panel_photos.clear()
+        _photo_root = cur
+
 # ── colour palette ───────────────────────────────────────────────────
 WALL_BASE      = "#3b3f5e"
 WALL_MORTAR    = "#2a2d48"
@@ -614,6 +630,7 @@ def get_canvas_photo(win_w: int, win_h: int, cw: int, ch: int):
     """
     if min(win_w, win_h, cw, ch) < 10:
         return None
+    _check_photo_root()
     base = _panel_base_image(win_w, win_h)
     if base is None:
         return None
@@ -669,6 +686,7 @@ def _darken(img, factor: float = PANEL_DARKEN):
 
 def get_panel_photo(win_w: int, win_h: int, panel_w: int):
     """Right-strip backdrop for the whole side panel. PhotoImage or None."""
+    _check_photo_root()
     base = _panel_base_image(win_w, win_h)
     if base is None:
         return None
@@ -691,6 +709,7 @@ def get_panel_slice(px: int, py: int, w: int, h: int,
     """Label-sized slice aligned to panel coords. PhotoImage or None."""
     if w < 4 or h < 4:
         return None
+    _check_photo_root()
     base = _panel_base_image(win_w, win_h)
     if base is None:
         return None
@@ -751,6 +770,7 @@ def _load_portal_src():
 
 def _portal_photo(size: int):
     """PhotoImage of the portal fitted into a `size`px cell (cached)."""
+    _check_photo_root()
     key = max(8, int(size))
     if key in _portal_photos:
         return _portal_photos[key]
@@ -806,6 +826,7 @@ def _load_boom_src():
 
 def _boom_photo(size: int):
     """PhotoImage of the bomb fitted into a `size`px cell (cached)."""
+    _check_photo_root()
     key = max(8, int(size))
     if key in _boom_photos:
         return _boom_photos[key]

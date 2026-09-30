@@ -210,6 +210,26 @@ class HiddenBoom(Trap):
         return "    "
 
 
+class HardMine(GameObject):
+    """An always-lethal mine that never disarms (map8 `H` stays armed).
+
+    Unlike HiddenBoom (lethal only while Trap.isLethal), this kills
+    regardless of the trap rule. Blocks can never be pushed onto it.
+    Renders with the same bomb art as a mine.
+    """
+
+    GLYPH = "MINE"
+
+    def is_blocking(self) -> bool:
+        return False
+
+    def is_lethal(self) -> bool:
+        return True
+
+    def glyph(self) -> str:
+        return self.GLYPH
+
+
 class BorderMine(GameObject):
     """Invisible perimeter explosive: always lethal, never blocking.
 

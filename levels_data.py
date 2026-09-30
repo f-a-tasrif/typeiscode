@@ -20,7 +20,7 @@ Layout pattern used by every level ("workshop + corridor"):
 """
 
 from level import Level
-from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor, SealWall, Stone
+from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor, SealWall, Stone, HardMine
 from blocks import CodeBlock, CircuitLine, CLASS, PROP, OP, VALUE, NOT
 from maps_data import MAPS
 
@@ -35,6 +35,7 @@ DEFAULT_REGISTRY = {
     "Trap": {"isLethal": True},
     "Stone": {"solid": True},
     "Seal": {"active": True},
+    "Flag": {"moved": False},
 }
 
 RULES_REGISTRY = {
@@ -48,6 +49,7 @@ RULES_REGISTRY = {
     "Trap": {"isLethal": True},
     "Stone": {"solid": True},
     "Seal": {"active": True},
+    "Flag": {"moved": False},
 }
 
 # -- data-driven global levels (levels 5+) ------------------------------
@@ -58,10 +60,13 @@ MAP_TOKENS: dict[str, tuple[str, object]] = {
     "Trap.": (CLASS, "Trap"),
     "Stone.": (CLASS, "Stone"),
     "Seal.": (CLASS, "Seal"),
+    "Wall.": (CLASS, "Wall"),
+    "Flag.": (CLASS, "Flag"),
     "solid": (PROP, "isSolid"),
     "open": (PROP, "isOpen"),
     "lethal": (PROP, "isLethal"),
     "active": (PROP, "active"),
+    "moved": (PROP, "moved"),
     "=": (OP, "="),
     "True": (VALUE, True),
     "False": (VALUE, False),
@@ -107,6 +112,8 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
                 lvl.set_goal(x, y)
             elif ch == "M":
                 lvl.add_object(HiddenBoom(x, y))
+            elif ch == "H":
+                lvl.add_object(HardMine(x, y))
             elif ch == "B":
                 lvl.add_wall(x, y)
                 lvl.add_object(BorderMine(x, y))
@@ -423,6 +430,22 @@ def build_level9() -> Level:
     return lvl
 
 
+def build_level10() -> Level:
+    e = MAPS[6]
+    lvl = _build_from_map("10 - The Relocating Flag", e["rows"], e["start"], e["tokens"],
+                          stone_mode=True)
+    for w in e.get("warp", []):
+        lvl.add_warp_pair(w[1], w[0], w[3], w[2])
+    # Wall.solid = False is solvable here, so the outer border gets live
+    # mines exactly like the vault B walls (see map10's mineW rule).
+    lvl.add_wall_border()
+    f2 = e.get("f2")
+    if f2 is not None:
+        # maps_data uses [row, col]; Level uses (x=col, y=row).
+        lvl.flag2 = (f2[1], f2[0])
+    return lvl
+
+
 ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4,
               build_level5, build_level6, build_level7, build_level8,
-              build_level9]
+              build_level9, build_level10]

@@ -10,7 +10,7 @@ cell beyond it is free); if a Platform/Door/Trap is in the way its
 """
 
 from __future__ import annotations
-from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine, Warp, SealWall
+from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine, Warp, SealWall, HardMine
 from blocks import CodeBlock, CircuitLine, is_merge_pair
 from registry import PropertyRegistry
 
@@ -51,6 +51,9 @@ class Level:
         self.fusion_enabled = True
         self.active_rules: list[str] = []
         self.fusion_press_count = 0   # tracks Stone./open presses toward fusion
+        # Relocated-flag target (x, y) for Flag.moved levels (map10):
+        # while Flag.moved is True the win cell is here, not the Goal tiles.
+        self.flag2: tuple[int, int] | None = None
 
     # -- level construction helpers -----------------------------------
     def add_wall_border(self):
@@ -245,7 +248,7 @@ class Level:
                         self.player_invisible = True
                         return ("You fell into the void!  The character "
                                 "vanishes into the dark.  Game over.")
-                    if isinstance(occ, (HiddenBoom, BorderMine)):
+                    if isinstance(occ, (HiddenBoom, BorderMine, HardMine)):
                         return "BOOM! The hidden explosive burst and blew you to pieces!"
                     return "You stepped on a live trap! Game over."
         else:
@@ -258,9 +261,13 @@ class Level:
                     self.player.x, self.player.y = dest_x, dest_y
             self.moves += 1
 
-        if isinstance(tile, Goal) and (self.player.x, self.player.y) == (nx, ny):
-            self.won = True
-            return "You reached the goal! Level complete."
+        flag_msg = self._check_flag_win()
+        if flag_msg is not None:
+            return flag_msg
+        if (self.player.x, self.player.y) == (nx, ny):
+            goal_msg = self._check_goal_win(tile)
+            if goal_msg is not None:
+                return goal_msg
 
         return ""
 
@@ -358,7 +365,7 @@ class Level:
                 return f"Can't push -- {beyond_terr.__class__.__name__} is solid."
             if self.warp_at(bx, by) is not None:
                 return "Can't push a block onto a portal."
-            if isinstance(self.terrain_at(bx, by), HiddenBoom):
+            if isinstance(self.terrain_at(bx, by), (HiddenBoom, BorderMine, HardMine)):
                 return "Can't push a block onto a mine."
             if self.block_at(bx, by) is not None:
                 return "Can't push -- something is already there."
@@ -375,7 +382,7 @@ class Level:
         self.moves += 1
         self.recompile_circuits()
 
-        # 6. AFTER recompile: lethality then goal.
+        # 6. AFTER recompile: lethality then relocated-flag / goal.
         under = self.terrain_at(self.player.x, self.player.y)
         if under is not None and under.is_lethal():
             self.dead = True
@@ -383,15 +390,37 @@ class Level:
                 self.player_invisible = True
                 return ("You fell into the void!  The character "
                         "vanishes into the dark.  Game over.")
-            if isinstance(under, (HiddenBoom, BorderMine)):
+            if isinstance(under, (HiddenBoom, BorderMine, HardMine)):
                 return "BOOM! The hidden explosive burst and blew you to pieces!"
             return "You stepped on a live trap! Game over."
 
-        if isinstance(self.tile_at(self.player.x, self.player.y), Goal):
-            self.won = True
-            return "You reached the goal! Level complete."
+        flag_msg = self._check_flag_win()
+        if flag_msg is not None:
+            return flag_msg
+        goal_msg = self._check_goal_win(self.tile_at(self.player.x, self.player.y))
+        if goal_msg is not None:
+            return goal_msg
 
         return ""
+
+    def _check_flag_win(self) -> str | None:
+        """Relocated-flag win (map10): while Flag.moved is True the finish
+        is the hidden chamber cell, and the visible Goal tiles are decoys."""
+        if not bool(PropertyRegistry.get("Flag", "moved", False)):
+            return None
+        if self.flag2 is not None and (self.player.x, self.player.y) == self.flag2:
+            self.won = True
+            return "You reached the relocated flag! Level complete."
+        return None
+
+    def _check_goal_win(self, tile: GameObject) -> str | None:
+        """Normal Goal-tile win, suppressed while the flag is relocated."""
+        if bool(PropertyRegistry.get("Flag", "moved", False)):
+            return None
+        if isinstance(tile, Goal):
+            self.won = True
+            return "You reached the goal! Level complete."
+        return None
 
     def _merge_partner(self, block: CodeBlock) -> CodeBlock | None:
         """The Path./open token sitting orthogonally next to `block`, if any."""
@@ -452,6 +481,8 @@ class Level:
     # -- rendering --------------------------------------------------------
     def render(self) -> str:
         bpos = self.blocks_by_pos()
+        flag_moved = bool(PropertyRegistry.get("Flag", "moved", False))
+        flag2 = getattr(self, "flag2", None)
         lines = []
         header = "     " + "".join(f"{x:^5}" for x in range(self.width))
         lines.append(header)
@@ -464,6 +495,10 @@ class Level:
                              and not (self.dead and self.player_invisible))
                 if on_player:
                     glyph = self.player.glyph()
+                elif (flag_moved and flag2 is not None and (x, y) == flag2
+                        and self.block_at(x, y) is None):
+                    # Relocated finish flag in its hidden chamber.
+                    glyph = Goal(x, y).glyph()
                 else:
                     # Block first, then terrain, then the static tile, so a
                     # block stacked on terrain (e.g. on an open door or a
@@ -475,6 +510,9 @@ class Level:
                         terr = self.terrain_at(x, y)
                         if terr is not None:
                             glyph = terr.glyph()
+                        elif flag_moved and isinstance(self.tile_at(x, y), Goal):
+                            # Decoy flag while relocated: reads as plain floor.
+                            glyph = Floor(x, y).glyph()
                         else:
                             glyph = self.tile_at(x, y).glyph()
                 row_cells.append(f"{glyph:^5}")
