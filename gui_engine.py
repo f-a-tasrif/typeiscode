@@ -21,6 +21,7 @@ from tile_renderer import (
     draw_code_block,
     draw_stone,
     draw_seal_wall, draw_warp, draw_mine,
+    get_canvas_photo, get_panel_photo, get_panel_slice,
 )
 
 # ── colour tokens (info-panel only) ─────────────────────────────────
@@ -79,6 +80,8 @@ class GUIEngine:
         self.level.reset()
         self._last_message = ""
         self._show_warps = True
+        self._label_photos: dict[str, object] = {}
+        self._panel_bg_key = None
 
         # window + layout
         self.window = Window("Type Is Code", 1280, 680, bg=BACKGROUND,
@@ -104,7 +107,7 @@ class GUIEngine:
         self.message_label = self.info_frame.add_label(
             "", font=("Consolas", 12, "italic"), fg=TEXT_BODY, bg=PANEL_BG,
             wraplength=405)
-        self.info_frame.add_label(
+        self.controls_label = self.info_frame.add_label(
             "🎮 Controls", font=("Consolas", 14, "bold"),
             fg=ACCENT, bg=PANEL_BG)
         self.help_view = self.info_frame.add_text_view(
@@ -157,6 +160,7 @@ class GUIEngine:
         cw, ch = self.canvas.get_size()
         if cw < 10 or ch < 10:
             return  # canvas not ready yet
+        win_w, win_h = self.window.root.winfo_width(), self.window.root.winfo_height()
 
         avail_w = cw - 2 * BOARD_PADDING
         avail_h = ch - 2 * BOARD_PADDING
@@ -167,6 +171,22 @@ class GUIEngine:
         board_h = cell * rows
         ox = (cw - board_w) // 2   # center board horizontally
         oy = (ch - board_h) // 2   # center board vertically
+
+        # night-crystal backdrop behind the board: left crop of the ONE
+        # window-sized image, so it continues seamlessly into the panel
+        try:
+            bg_photo = get_canvas_photo(win_w, win_h, cw, ch)
+        except Exception:
+            bg_photo = None
+        if bg_photo is not None:
+            self._bg_photo = bg_photo  # keep a ref so Tk does not blank it
+            raw.create_image(0, 0, image=bg_photo, anchor="nw")
+
+        # teal glow rim around the board, like the reference mockup
+        for pad, color in ((10, "#0e3a40"), (7, "#155e63"), (4, "#2aa5a0")):
+            raw.create_rectangle(ox - pad, oy - pad,
+                                 ox + board_w + pad, oy + board_h + pad,
+                                 fill="", outline=color, width=2)
 
         # board background + border
         raw.create_rectangle(ox - 3, oy - 3,
@@ -370,6 +390,55 @@ class GUIEngine:
         else:
             self.hints_label.pack_forget()
             self.hints_view._text.pack_forget()
+
+        self._paint_panel_backdrop()
+
+    def _paint_panel_backdrop(self):
+        """Dress the whole side panel in the night art (darkened for text).
+
+        Frame gaps show the full-panel slice; each header/status label
+        gets its own aligned slice behind its text.  Skipped (leaving the
+        flat colours) when geometry is unset or the art is unavailable.
+        """
+        try:
+            frame = self.info_frame._frame
+            root = self.window.root
+            root.update_idletasks()
+            win_w, win_h = root.winfo_width(), root.winfo_height()
+            panel_w, panel_h = frame.winfo_width(), frame.winfo_height()
+            if win_w < 50 or win_h < 50 or panel_w < 50 or panel_h < 50:
+                return
+            tracked = (("status", self.status_label),
+                       ("moves", self.moves_label),
+                       ("message", self.message_label),
+                       ("controls", self.controls_label),
+                       ("hints", self.hints_label))
+            geom = []
+            for _, lab in tracked:
+                if not lab.winfo_ismapped():
+                    geom.append(None)
+                    continue
+                geom.append((lab.winfo_x(), lab.winfo_y(),
+                             lab.winfo_width(), lab.winfo_height()))
+            key = (win_w, win_h, panel_w, panel_h, tuple(geom))
+            if key == self._panel_bg_key:
+                return
+            self._panel_bg_key = key
+            bg = get_panel_photo(win_w, win_h, panel_w)
+            if bg is None:
+                return
+            self.info_frame.set_background(bg)
+            for (name, lab), g in zip(tracked, geom):
+                if g is None:
+                    continue
+                lx, ly, lw, lh = g
+                photo = get_panel_slice(lx, ly, lw, lh, win_w, win_h, panel_w)
+                if photo is None:
+                    continue
+                self._label_photos[name] = photo
+                lab.configure(image=photo, compound="center")
+        except Exception:
+            return
 
     # ── input ───────────────────────────────────────────────────────
     def on_key(self, key: str):

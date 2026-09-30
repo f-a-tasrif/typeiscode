@@ -128,6 +128,22 @@ class TextView:
 class Frame:
     def __init__(self, tk_frame: tk.Frame):
         self._frame = tk_frame
+        # backdrop photo pinned behind all panel widgets (see set_background)
+        self._bg_label = tk.Label(tk_frame, borderwidth=0, highlightthickness=0,
+                                  anchor="nw")
+        self._bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+        self._bg_photo = None
+
+    def set_background(self, photo):
+        """Pin a backdrop photo behind all panel widgets (None hides it)."""
+        if photo is None:
+            self._bg_label.place_forget()
+            self._bg_photo = None
+            return
+        self._bg_photo = photo  # hold a ref so Tk does not blank it
+        self._bg_label.configure(image=photo)
+        self._bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+        self._bg_label.lower()
 
     def add_label(self, text: str, font=None, fg: str = "white",
                   bg: str | None = None, anchor: str = "nw",

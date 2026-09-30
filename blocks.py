@@ -36,7 +36,7 @@ _GLYPHS = {
     ("CLASS", "Door"): "Door.",
     ("CLASS", "Trap"): "Trap.",
     ("CLASS", "Room"): "Room.",
-    ("CLASS", "Stone"): "Ston.",
+    ("CLASS", "Stone"): "Stone",
     ("CLASS", "Seal"): "Seal.",
     ("PROP", "fire"): "fire",
     ("PROP", "water"): "water",
@@ -44,11 +44,11 @@ _GLYPHS = {
     ("PROP", "isOpen"): "open",
     ("PROP", "isLethal"): "lethal",
     ("PROP", "solid"): "solid",
-    ("PROP", "active"): "actv",
+    ("PROP", "active"): "active",
     ("OP", "="): " = ",
     ("VALUE", True): "True",
     ("VALUE", False): "False",
-    ("NOT", "NOT"): "NOT",
+    ("NOT", "NOT"): "not",
 }
 
 

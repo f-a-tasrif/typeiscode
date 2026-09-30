@@ -79,6 +79,9 @@ STONE_BASE     = "#7a4f2a"
 STONE_OUTLINE  = "#5a3010"
 STONE_HI       = "#b07040"
 STONE_SHADOW   = "#3a1a08"
+STONE_WALL     = "#5a5e78"
+STONE_MORTAR   = "#383b52"
+STONE_TOP      = "#7a7f99"
 SEAL_PURPLE    = "#8b5cf6"
 WARP_INDIGO    = "#6366f1"
 BLOCK_BG       = "#1a3a6a"
@@ -485,27 +488,26 @@ def draw_circuit_slot(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_stone(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Solid stone block — brownish-orange, like the HTML's orange stone."""
+    """Solid stone block — grey stone-brick wall, heavier than Wall."""
     canvas.create_rectangle(x, y, x + size, y + size,
-                            fill=STONE_BASE, outline=STONE_OUTLINE, width=1)
-    # highlight bevel on top-left edges
-    bw = max(1, size // 12)
+                            fill=STONE_WALL, outline=STONE_MORTAR, width=1)
+    # brick courses, same structure as draw_wall but larger blocks
+    rows = max(2, size // 12)
+    row_h = size / rows
+    for r in range(rows):
+        ry = y + int(r * row_h)
+        canvas.create_line(x, ry, x + size, ry, fill=STONE_MORTAR, width=1)
+        cols = max(2, size // 16)
+        col_w = size / cols
+        offset = col_w / 2 if r % 2 else 0
+        for c in range(cols + 1):
+            cx = x + int(c * col_w + offset)
+            if x <= cx <= x + size:
+                canvas.create_line(cx, ry, cx, ry + int(row_h),
+                                   fill=STONE_MORTAR, width=1)
+    # pale top edge so it reads as raised stone in dim light
     canvas.create_line(x + 1, y + 1, x + size - 1, y + 1,
-                       fill=STONE_HI, width=bw)
-    canvas.create_line(x + 1, y + 1, x + 1, y + size - 1,
-                       fill=STONE_HI, width=bw)
-    # shadow bevel on bottom-right edges
-    canvas.create_line(x + 1, y + size - 1, x + size - 1, y + size - 1,
-                       fill=STONE_SHADOW, width=bw)
-    canvas.create_line(x + size - 1, y + 1, x + size - 1, y + size - 1,
-                       fill=STONE_SHADOW, width=bw)
-    # 2 horizontal crack lines across the middle third for texture
-    cw = max(1, size // 24)
-    for frac in (0.42, 0.58):
-        cy = y + int(size * frac)
-        canvas.create_line(x + size // 6, cy,
-                           x + size * 5 // 6, cy + max(0, size // 48),
-                           fill=STONE_SHADOW, width=cw)
+                       fill=STONE_TOP, width=max(1, size // 16))
 
 
 def draw_stone_open(canvas: tk.Canvas, x: int, y: int, size: int):
@@ -591,6 +593,121 @@ def draw_mine(canvas: tk.Canvas, x: int, y: int, size: int):
                             image=photo, anchor="center")
         return
     draw_trap_lethal(canvas, x, y, size)
+
+
+# ── full-window background: ONE image for the whole window ───────────
+# The art is resized once to the full window size (_panel_base_image) and
+# every surface — board canvas (left crop), panel (right strip), labels
+# (aligned slices) — is cut from that same image, so the backdrop flows
+# seamlessly across the window with no scaling seams.
+BACKGROUND_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "assets", "background.jpeg")
+_bg_src = None          # cached RGB PIL image, or False when unavailable
+
+
+def get_canvas_photo(win_w: int, win_h: int, cw: int, ch: int):
+    """Backdrop crop for the board canvas, from the ONE window-sized image.
+
+    The canvas occupies the window's top-left (cw x ch), so cropping there
+    keeps it pixel-continuous with the panel slices on the right.
+    Returns a PhotoImage, or None when unavailable/de-generate.
+    """
+    if min(win_w, win_h, cw, ch) < 10:
+        return None
+    base = _panel_base_image(win_w, win_h)
+    if base is None:
+        return None
+    key = ("canvas", int(win_w), int(win_h), int(cw), int(ch))
+    if key in _panel_photos:
+        return _panel_photos[key]
+    try:
+        crop = base.crop((0, 0, int(cw), int(ch)))
+        photo = _PILImageTk.PhotoImage(crop)
+    except Exception:
+        return None
+    if len(_panel_photos) >= 30:
+        _panel_photos.pop(next(iter(_panel_photos)))
+    _panel_photos[key] = photo
+    return photo
+
+
+# ── side-panel backdrop (same art, darkened for readability) ─────────
+# Tk frames/labels are opaque, so the canvas photo cannot show through.
+# Instead the panel gets its own slices of the same backdrop, darkened
+# so light text stays readable, aligned to panel coordinates.
+_panel_base: dict[tuple[int, int], object] = {}  # (win_w, win_h) -> RGB PIL
+_panel_photos: dict[tuple, object] = {}          # slice keys -> PhotoImage
+PANEL_DARKEN = 0.45
+
+
+def _panel_base_image(win_w: int, win_h: int):
+    """Window-sized RGB art shared by all panel slices (cached, max 3)."""
+    key = (int(win_w), int(win_h))
+    if key in _panel_base:
+        return _panel_base[key]
+    if not _PIL_AVAILABLE:
+        return None
+    global _bg_src
+    if _bg_src is None:
+        try:
+            _bg_src = _PILImage.open(BACKGROUND_IMAGE).convert("RGB")
+        except (OSError, FileNotFoundError):
+            _bg_src = False
+            return None
+    if _bg_src is False:
+        return None
+    img = _bg_src.resize(key, _PILImage.BILINEAR)
+    if len(_panel_base) >= 3:
+        _panel_base.pop(next(iter(_panel_base)))
+    _panel_base[key] = img
+    return img
+
+
+def _darken(img, factor: float = PANEL_DARKEN):
+    return img.point(lambda v: int(v * factor))
+
+
+def get_panel_photo(win_w: int, win_h: int, panel_w: int):
+    """Right-strip backdrop for the whole side panel. PhotoImage or None."""
+    base = _panel_base_image(win_w, win_h)
+    if base is None:
+        return None
+    key = ("panel", int(win_w), int(win_h), int(panel_w))
+    if key in _panel_photos:
+        return _panel_photos[key]
+    try:
+        crop = base.crop((int(win_w) - int(panel_w), 0, int(win_w), int(win_h)))
+        photo = _PILImageTk.PhotoImage(_darken(crop))
+    except Exception:
+        return None
+    if len(_panel_photos) >= 8:
+        _panel_photos.pop(next(iter(_panel_photos)))
+    _panel_photos[key] = photo
+    return photo
+
+
+def get_panel_slice(px: int, py: int, w: int, h: int,
+                    win_w: int, win_h: int, panel_w: int):
+    """Label-sized slice aligned to panel coords. PhotoImage or None."""
+    if w < 4 or h < 4:
+        return None
+    base = _panel_base_image(win_w, win_h)
+    if base is None:
+        return None
+    key = ("slice", int(px), int(py), int(w), int(h),
+           int(win_w), int(win_h), int(panel_w))
+    if key in _panel_photos:
+        return _panel_photos[key]
+    try:
+        x0 = int(win_w) - int(panel_w) + int(px)
+        crop = base.crop((x0, int(py), x0 + int(w), int(py) + int(h)))
+        photo = _PILImageTk.PhotoImage(_darken(crop))
+    except Exception:
+        return None
+    if len(_panel_photos) >= 24:
+        _panel_photos.pop(next(iter(_panel_photos)))
+    _panel_photos[key] = photo
+    return photo
 
 
 # ── portal photo support (assets/portal.jpeg) ─────────────────────────
