@@ -54,7 +54,7 @@ CAM_LERP       = 0.35 # per-tick easing toward the player (higher = snappier)
 CAM_EPS        = 0.03 # stop animating below this distance (cells)
 CAM_ZOOM_LERP  = 0.35 # per-tick easing for smooth zoom
 CAM_ZOOM_EPS   = 0.01
-CAM_ZOOM_MIN   = 0.6
+CAM_ZOOM_MIN   = 0.2
 CAM_ZOOM_MAX   = 2.0
 
 # ── per-level hints (HINTS panel) ───────────────────────────────────
@@ -326,6 +326,42 @@ class GUIEngine:
         ox = (cw - board_w) // 2
         oy = (ch - board_h) // 2
         return cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy
+
+    def _zoom_for_full_map(self, avail_w: int, avail_h: int) -> float:
+        """Zoom target that fits the whole current level on screen.
+
+        Mirrors _compute_camera's fit-vs-want math: returns fit / want_base
+        clamped to [CAM_ZOOM_MIN, CAM_ZOOM_MAX], so "fit map" always lands
+        exactly where the renderer switches to whole-board mode.
+        """
+        cols = max(1, self.level.width)
+        rows = max(1, self.level.height)
+        fit = min(avail_w // cols, avail_h // rows)
+        fit = max(1, fit)
+        want_base = min(avail_w // CAM_VIEW_COLS, avail_h // CAM_VIEW_ROWS)
+        want_base = max(CAM_MIN_CELL, want_base)
+        want_base = min(want_base, CAM_MAX_CELL)
+        if want_base <= 0:
+            return CAM_ZOOM_MIN
+        needed = fit / float(want_base)
+        return max(CAM_ZOOM_MIN, min(float(CAM_ZOOM_MAX), needed))
+
+    def fit_map_to_screen(self) -> float:
+        """Zoom out (or in) just enough to show the full map. Returns zoom."""
+        try:
+            cw, ch = self.canvas.get_size()
+        except Exception:
+            cw, ch = 0, 0
+        if cw < 10 or ch < 10:
+            # Canvas not laid out yet: fall back to the minimum zoom so a
+            # very early keypress still zooms out instead of doing nothing.
+            self._zoom = CAM_ZOOM_MIN
+        else:
+            avail_w = cw - 2 * BOARD_PADDING
+            avail_h = ch - 2 * BOARD_PADDING
+            self._zoom = self._zoom_for_full_map(avail_w, avail_h)
+        self._nudge_camera_toward_target(0.6)
+        return self._zoom
 
     # ── rendering ───────────────────────────────────────────────────
     def render_frame(self, message: str = "", board_only: bool = False):
@@ -617,7 +653,7 @@ class GUIEngine:
                 "W / ↑  = up        A / ← = left\n"
                 "S / ↓  = down      D / → = right\n"
                 "R = restart level   C = center camera\n"
-                "+ / - = zoom in / out\n"
+                "+ / - = zoom in / out   0/F = fit full map\n"
                 "Q = quit\n\n"
                 "Push code blocks onto the circuit line so\n"
                 "the statement compiles.  CLASS PROP = VALUE\n\n"
@@ -702,7 +738,7 @@ class GUIEngine:
             self.window.root.destroy()
             return
         if key == "h":
-            self.render_frame("Arrows/WASD move. R=restart. +/-=zoom. C=center. Q=quit.")
+            self.render_frame("Arrows/WASD move. R=restart. +/-=zoom. 0/F=fit map. C=center. Q=quit.")
             return
         if key == "r":
             from_start = self.game_completed
@@ -723,6 +759,10 @@ class GUIEngine:
             self._zoom = max(CAM_ZOOM_MIN, self._zoom - 0.15)
             self._nudge_camera_toward_target(0.6)
             self.render_frame(f"Zoom {self._zoom:.2f}x -- see more rooms.")
+            return
+        if key in ("0", "f", "fit"):
+            zoom = self.fit_map_to_screen()
+            self.render_frame(f"Zoom {zoom:.2f}x -- full map in view.")
             return
         if key == "c":
             # Let the easing loop glide back to the player (smooth);
