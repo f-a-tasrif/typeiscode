@@ -407,6 +407,8 @@ class GUIEngine:
         # the finish art belongs on the hidden chamber cell instead.
         flag_moved = bool(PropertyRegistry.get("Flag", "moved", False))
         flag2 = getattr(self.level, "flag2", None)
+        gate_on = bool(PropertyRegistry.get("Gate", "at", False))
+        gate2 = getattr(self.level, "gate2", None)
         if is_global:
             for gy in range(y0i, y1i):
                 for gx in range(x0i, x1i):
@@ -426,6 +428,8 @@ class GUIEngine:
                     else:
                         draw_floor(raw, px, py, cell)
                         if flag_moved and flag2 is not None and (gx, gy) == flag2:
+                            draw_goal(raw, px, py, cell)
+                        elif gate_on and gate2 is not None and (gx, gy) == gate2:
                             draw_goal(raw, px, py, cell)
 
                     # 2. terrain layer
@@ -454,6 +458,21 @@ class GUIEngine:
                     elif tcls == "SealWall":
                         if terr.is_blocking():
                             draw_seal_wall(raw, px, py, cell)
+                        else:
+                            draw_floor(raw, px, py, cell)
+                    elif tcls in ("Seal2Wall", "Seal3Wall"):
+                        if terr.is_blocking():
+                            draw_seal_wall(raw, px, py, cell)
+                        else:
+                            draw_floor(raw, px, py, cell)
+                    elif tcls == "LatchDoor":
+                        if terr.is_blocking():
+                            draw_door_closed(raw, px, py, cell)
+                        else:
+                            draw_door_open(raw, px, py, cell)
+                    elif tcls == "LaserDoor":
+                        if terr.is_blocking():
+                            draw_stone(raw, px, py, cell)
                         else:
                             draw_floor(raw, px, py, cell)
                     elif tcls == "Warp":

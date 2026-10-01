@@ -10,7 +10,7 @@ cell beyond it is free); if a Platform/Door/Trap is in the way its
 """
 
 from __future__ import annotations
-from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine, Warp, SealWall, HardMine
+from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine, Warp, SealWall, Seal2Wall, Seal3Wall, LatchDoor, LaserDoor, HardMine
 from blocks import CodeBlock, CircuitLine, is_merge_pair
 from registry import PropertyRegistry
 
@@ -54,6 +54,13 @@ class Level:
         # Relocated-flag target (x, y) for Flag.moved levels (map10):
         # while Flag.moved is True the win cell is here, not the Goal tiles.
         self.flag2: tuple[int, int] | None = None
+        # Forge-crafted finish (map14): while Gate.at is True the win cell
+        # is here; the level starts with no Goal tiles at all.
+        self.gate2: tuple[int, int] | None = None
+        # Crafting recipes: [((kind,val),(kind,val),(kind,val)), ...]
+        # Pushing the first two together (either order, orthogonal contact
+        # via a push) consumes both and spawns the third at the target cell.
+        self.recipes: list = []
 
     # -- level construction helpers -----------------------------------
     def add_wall_border(self):
@@ -285,6 +292,11 @@ class Level:
         # defaults for levels built before the extension.
         self.initial_registry.setdefault("Stone", {"solid": True})
         self.initial_registry.setdefault("Seal", {"active": True})
+        self.initial_registry.setdefault("Latch", {"isOpen": False})
+        self.initial_registry.setdefault("Laser", {"beams": True})
+        self.initial_registry.setdefault("Seal2", {"active": True})
+        self.initial_registry.setdefault("Seal3", {"active": True})
+        self.initial_registry.setdefault("Gate", {"at": False})
         PropertyRegistry.reset(self.initial_registry)
         self.active_rules = []
         bpos = self.blocks_by_pos()
@@ -324,6 +336,14 @@ class Level:
                 self.active_rules.append(f"{cls_name}.{canon} = NOT {raw} -> {val}")
             else:
                 self.active_rules.append(f"{cls_name}.{canon} = {raw}")
+
+    def _craft_result(self, a, b):
+        """Return (kind, value) if blocks a,b match a recipe, else None."""
+        for (k1, v1), (k2, v2), (kr, vr) in self.recipes:
+            if ((a.kind, a.value) == (k1, v1) and (b.kind, b.value) == (k2, v2)) or \
+               ((a.kind, a.value) == (k2, v2) and (b.kind, b.value) == (k1, v1)):
+                return (kr, vr)
+        return None
 
     def _move_player_global(self, direction: str) -> str:
         if direction not in DIRS or self.won or self.dead:
@@ -368,6 +388,22 @@ class Level:
             if isinstance(self.terrain_at(bx, by), (HiddenBoom, BorderMine, HardMine)):
                 return "Can't push a block onto a mine."
             if self.block_at(bx, by) is not None:
+                other = self.block_at(bx, by)
+                crafted = self._craft_result(blk, other)
+                if crafted is not None:
+                    from blocks import CodeBlock as _CB
+                    self.dynamic_objects = [
+                        o for o in self.dynamic_objects
+                        if o is not blk and o is not other
+                    ]
+                    self.dynamic_objects.append(_CB(bx, by, crafted[0], crafted[1]))
+                    self.player.x, self.player.y = nx, ny
+                    self.moves += 1
+                    self.recompile_circuits()
+                    gate_msg = self._check_gate_win()
+                    if gate_msg is not None:
+                        return f"Crafted {crafted[1]}!  " + gate_msg
+                    return f"Crafted {crafted[1]}!"
                 return "Can't push -- something is already there."
             blk.x, blk.y = bx, by
 
@@ -397,6 +433,9 @@ class Level:
         flag_msg = self._check_flag_win()
         if flag_msg is not None:
             return flag_msg
+        gate_msg = self._check_gate_win()
+        if gate_msg is not None:
+            return gate_msg
         goal_msg = self._check_goal_win(self.tile_at(self.player.x, self.player.y))
         if goal_msg is not None:
             return goal_msg
@@ -411,6 +450,16 @@ class Level:
         if self.flag2 is not None and (self.player.x, self.player.y) == self.flag2:
             self.won = True
             return "You reached the relocated flag! Level complete."
+        return None
+
+    def _check_gate_win(self) -> str | None:
+        """Forge finish (map14): while Gate.at is True the win cell is
+        gate2, generated inside an isolated chamber (no Goal tiles)."""
+        if not bool(PropertyRegistry.get("Gate", "at", False)):
+            return None
+        if self.gate2 is not None and (self.player.x, self.player.y) == self.gate2:
+            self.won = True
+            return "You reached the forged flag! Level complete."
         return None
 
     def _check_goal_win(self, tile: GameObject) -> str | None:
@@ -483,6 +532,8 @@ class Level:
         bpos = self.blocks_by_pos()
         flag_moved = bool(PropertyRegistry.get("Flag", "moved", False))
         flag2 = getattr(self, "flag2", None)
+        gate_on = bool(PropertyRegistry.get("Gate", "at", False))
+        gate2 = getattr(self, "gate2", None)
         lines = []
         header = "     " + "".join(f"{x:^5}" for x in range(self.width))
         lines.append(header)
@@ -498,6 +549,9 @@ class Level:
                 elif (flag_moved and flag2 is not None and (x, y) == flag2
                         and self.block_at(x, y) is None):
                     # Relocated finish flag in its hidden chamber.
+                    glyph = Goal(x, y).glyph()
+                elif (gate_on and gate2 is not None and (x, y) == gate2
+                        and self.block_at(x, y) is None):
                     glyph = Goal(x, y).glyph()
                 else:
                     # Block first, then terrain, then the static tile, so a

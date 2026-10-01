@@ -20,7 +20,7 @@ Layout pattern used by every level ("workshop + corridor"):
 """
 
 from level import Level
-from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor, SealWall, Stone, HardMine
+from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor, SealWall, Seal2Wall, Seal3Wall, LatchDoor, LaserDoor, Stone, HardMine
 from blocks import CodeBlock, CircuitLine, CLASS, PROP, OP, VALUE, NOT
 from maps_data import MAPS
 
@@ -49,6 +49,11 @@ RULES_REGISTRY = {
     "Trap": {"isLethal": True},
     "Stone": {"solid": True},
     "Seal": {"active": True},
+    "Seal2": {"active": True},
+    "Seal3": {"active": True},
+    "Latch": {"isOpen": False},
+    "Laser": {"beams": True},
+    "Gate": {"at": False},
     "Flag": {"moved": False},
 }
 
@@ -60,8 +65,19 @@ MAP_TOKENS: dict[str, tuple[str, object]] = {
     "Trap.": (CLASS, "Trap"),
     "Stone.": (CLASS, "Stone"),
     "Seal.": (CLASS, "Seal"),
+    "Seal2.": (CLASS, "Seal2"),
+    "Seal3.": (CLASS, "Seal3"),
+    "Latch.": (CLASS, "Latch"),
+    "Laser.": (CLASS, "Laser"),
+    "Gate.": (CLASS, "Gate"),
     "Wall.": (CLASS, "Wall"),
     "Flag.": (CLASS, "Flag"),
+    "@Door": (CLASS, "Access"),
+    "@Trap": (CLASS, "Turn"),
+    "Entry": (CLASS, "Entry"),
+    "OR": (PROP, "point"),
+    "at": (PROP, "at"),
+    "beams": (PROP, "beams"),
     "solid": (PROP, "isSolid"),
     "open": (PROP, "isOpen"),
     "lethal": (PROP, "isLethal"),
@@ -76,7 +92,9 @@ MAP_TOKENS: dict[str, tuple[str, object]] = {
 
 def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
                     tokens: list[tuple[int, int, str]], warp: list | None = None,
-                    stone_mode: bool = False) -> Level:
+                    stone_mode: bool = False, rec: list | None = None,
+                    f2: list | tuple | None = None,
+                    border_mines: bool = False) -> Level:
     """Build a global-rules level from HTML map data.
 
     `rows` are ASCII map rows, `start` is (row, col), `tokens` are
@@ -88,6 +106,10 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
     stone_mode: when True (map8/level 9), `T` cells are Stone blocks
     (blocking while Stone.solid = True, like the HTML's orange stone);
     otherwise `T` is a Platform void trap as in the earlier maps.
+    rec: crafting recipes as HTML texts, e.g. [['@Door','OR','Entry']].
+    f2: [row, col] forged-flag cell for Gate.at win (map14).
+    border_mines: add BorderMine ring (outer border hides always-lethal
+    mines, like map10/map14 where Wall.solid = False is solvable).
     """
     W, H = len(rows[0]), len(rows)
     lvl = Level(name, W, H, RULES_REGISTRY)
@@ -106,6 +128,10 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
                     lvl.add_object(Platform(x, y))
             elif ch == "D":
                 lvl.add_object(Door(x, y))
+            elif ch == "E":
+                lvl.add_object(LatchDoor(x, y))
+            elif ch == "L":
+                lvl.add_object(LaserDoor(x, y))
             elif ch == "X":
                 lvl.add_object(Trap(x, y))
             elif ch == "F":
@@ -119,6 +145,10 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
                 lvl.add_object(BorderMine(x, y))
             elif ch == "S":
                 lvl.add_object(SealWall(x, y))
+            elif ch == "Z":
+                lvl.add_object(Seal2Wall(x, y))
+            elif ch == "Y":
+                lvl.add_object(Seal3Wall(x, y))
             # "." = nothing
     sr, sc = start
     lvl.set_player(sc, sr)
@@ -129,6 +159,16 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
         # w = [row1, col1, row2, col2]
         lvl.add_warp_pair(w[1], w[0], w[3], w[2])
         # note: maps_data uses [row, col] order; Level uses (x=col, y=row)
+    if rec:
+        for a, b, c in rec:
+            ka, va = MAP_TOKENS[a]
+            kb, vb = MAP_TOKENS[b]
+            kc, vc = MAP_TOKENS[c]
+            lvl.recipes.append(((ka, va), (kb, vb), (kc, vc)))
+    if f2 is not None:
+        lvl.gate2 = (f2[1], f2[0])
+    if border_mines:
+        lvl.add_wall_border()
     lvl.recompile_circuits()
     return lvl
 
@@ -446,6 +486,28 @@ def build_level10() -> Level:
     return lvl
 
 
+def build_level11() -> Level:
+    """Map 14 - The Forge Citadel (L6).
+
+    Mechanism ported from Newmap14.html:
+    - Trap/Door/Wall rules with NOT, plus Latch/Stone/Laser/Seal/Seal2/Seal3.
+    - Striped B walls + outer border hide always-lethal mines, so
+      Wall.solid = False opens plain walls but never the striped ones.
+    - 9 hidden portal pairs; blocks can never be pushed onto mines/portals.
+    - Crafting: Access + point -> entry, entry + turn -> Gate.
+      Push a block into another; if they form a recipe both vanish and
+      the result appears where the target stood.
+    - Gate.at = True generates the finish at f2 (isolated chamber,
+      portal-only). Latch/Stone open the lower Forge vault; three seals
+      guard turn / spare NOT / at; laser guards the Seal3 room.
+    """
+    e = MAPS[7]
+    return _build_from_map("11 - The Forge Citadel", e["rows"], e["start"],
+                           e["tokens"], warp=e.get("warp"),
+                           stone_mode=True, rec=e.get("rec"),
+                           f2=e.get("f2"), border_mines=True)
+
+
 ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4,
               build_level5, build_level6, build_level7, build_level8,
-              build_level9, build_level10]
+              build_level9, build_level10, build_level11]

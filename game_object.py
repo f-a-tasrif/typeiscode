@@ -230,6 +230,54 @@ class HardMine(GameObject):
         return self.GLYPH
 
 
+class LatchDoor(GameObject):
+    """Pink latch door: blocks while Latch.isOpen is False (like Door)."""
+    GLYPH_CLOSED = "LTCH"
+    GLYPH_OPEN = "open"
+
+    def is_blocking(self) -> bool:
+        return not bool(PropertyRegistry.get("Latch", "isOpen", False))
+
+    def glyph(self) -> str:
+        return self.GLYPH_OPEN if not self.is_blocking() else self.GLYPH_CLOSED
+
+
+class LaserDoor(GameObject):
+    """Laser beams: blocks while Laser.beams is True (like Stone)."""
+    GLYPH_ON = "LASR"
+    GLYPH_OFF = "    "
+
+    def is_blocking(self) -> bool:
+        return bool(PropertyRegistry.get("Laser", "beams", True))
+
+    def glyph(self) -> str:
+        return self.GLYPH_ON if self.is_blocking() else self.GLYPH_OFF
+
+
+class Seal2Wall(SealWall):
+    """Teal seal ring: blocks while Seal2.active is True."""
+    GLYPH_SEALED = "SL2"
+    GLYPH_OPEN = "    "
+
+    def is_blocking(self) -> bool:
+        return bool(PropertyRegistry.get("Seal2", "active", True))
+
+    def glyph(self) -> str:
+        return self.GLYPH_SEALED if self.is_blocking() else self.GLYPH_OPEN
+
+
+class Seal3Wall(SealWall):
+    """Amber seal ring: blocks while Seal3.active is True."""
+    GLYPH_SEALED = "SL3"
+    GLYPH_OPEN = "    "
+
+    def is_blocking(self) -> bool:
+        return bool(PropertyRegistry.get("Seal3", "active", True))
+
+    def glyph(self) -> str:
+        return self.GLYPH_SEALED if self.is_blocking() else self.GLYPH_OPEN
+
+
 class BorderMine(GameObject):
     """Invisible perimeter explosive: always lethal, never blocking.
 
