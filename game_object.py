@@ -243,11 +243,19 @@ class LatchDoor(GameObject):
 
 
 class LaserDoor(GameObject):
-    """Laser beams: blocks while Laser.beams is True (like Stone)."""
+    """Laser beams: blocks while Laser.beams is True (like Stone).
+
+    Touching live beams vaporises the character (ash death) instead of
+    merely blocking: is_lethal() is True while the beams are on, and the
+    level movers kill the player on entry (see level.py)."""
+
     GLYPH_ON = "LASR"
     GLYPH_OFF = "    "
 
     def is_blocking(self) -> bool:
+        return bool(PropertyRegistry.get("Laser", "beams", True))
+
+    def is_lethal(self) -> bool:
         return bool(PropertyRegistry.get("Laser", "beams", True))
 
     def glyph(self) -> str:

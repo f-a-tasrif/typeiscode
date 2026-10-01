@@ -237,7 +237,15 @@ class Level:
                     return self._fuse_pair(occ, partner)
                 self.recompile_circuits()
             else:
-                # Platform / Door / Trap -- consult live behaviour
+                # Platform / Door / Trap / Laser -- consult live behaviour.
+                # Live laser beams vaporise the character (ash death)
+                # instead of merely blocking.
+                if isinstance(occ, LaserDoor) and occ.is_blocking():
+                    self.player.x, self.player.y = nx, ny
+                    self.moves += 1
+                    self.dead = True
+                    return ("Zapped! The laser vaporised you into ash! "
+                            "Game over.")
                 if occ.is_blocking():
                     return f"{occ.__class__.__name__} is solid -- you can't pass."
                 # not blocking: step onto/through it
@@ -256,8 +264,8 @@ class Level:
                         return ("You fell into the void!  The character "
                                 "vanishes into the dark.  Game over.")
                     if isinstance(occ, (HiddenBoom, BorderMine, HardMine)):
-                        return "BOOM! The hidden explosive burst and blew you to pieces!"
-                    return "You stepped on a live trap! Game over."
+                        return "BOOM! The mine blew you to ash! Game over."
+                    return "The trap stripped you to a skeleton! Game over."
         else:
             self.player.x, self.player.y = nx, ny
             warp = self.warp_at(self.player.x, self.player.y)
@@ -364,8 +372,14 @@ class Level:
         if isinstance(seal, SealWall) and seal.is_blocking():
             return "A sealed wall blocks the way."
 
-        # 3. terrain at target that is blocking -> reject.
+        # 3. terrain at target that is blocking -> reject,
+        # except live laser beams which vaporise the character (ash death).
         terr = self.terrain_at(nx, ny)
+        if isinstance(terr, LaserDoor) and terr.is_blocking():
+            self.player.x, self.player.y = nx, ny
+            self.moves += 1
+            self.dead = True
+            return ("Zapped! The laser vaporised you into ash! Game over.")
         if terr is not None and terr.is_blocking():
             return f"{terr.__class__.__name__} is solid -- you can't pass."
 
@@ -427,8 +441,8 @@ class Level:
                 return ("You fell into the void!  The character "
                         "vanishes into the dark.  Game over.")
             if isinstance(under, (HiddenBoom, BorderMine, HardMine)):
-                return "BOOM! The hidden explosive burst and blew you to pieces!"
-            return "You stepped on a live trap! Game over."
+                return "BOOM! The mine blew you to ash! Game over."
+            return "The trap stripped you to a skeleton! Game over."
 
         flag_msg = self._check_flag_win()
         if flag_msg is not None:
@@ -545,7 +559,18 @@ class Level:
                              and self.player.y == y
                              and not (self.dead and self.player_invisible))
                 if on_player:
-                    glyph = self.player.glyph()
+                    if self.dead:
+                        under = self.terrain_at(x, y)
+                        if type(under) is Trap:
+                            # exact Trap (not HiddenBoom): skeleton
+                            glyph = "SKEL"
+                        elif isinstance(under, (LaserDoor, HiddenBoom,
+                                                BorderMine, HardMine)):
+                            glyph = "ASH "
+                        else:
+                            glyph = self.player.glyph()
+                    else:
+                        glyph = self.player.glyph()
                 elif (flag_moved and flag2 is not None and (x, y) == flag2
                         and self.block_at(x, y) is None):
                     # Relocated finish flag in its hidden chamber.

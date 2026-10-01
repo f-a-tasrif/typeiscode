@@ -19,8 +19,11 @@ from tile_renderer import (
     draw_door_closed, draw_door_open,
     draw_trap_lethal, draw_trap_safe,
     draw_boom_explosion,
+    draw_ash,
+    draw_skeleton,
     draw_code_block,
     draw_stone,
+    draw_laser,
     draw_seal_wall, draw_warp, draw_mine,
     get_canvas_photo, get_panel_photo, get_panel_slice,
 )
@@ -508,9 +511,9 @@ class GUIEngine:
                             draw_door_open(raw, px, py, cell)
                     elif tcls == "LaserDoor":
                         if terr.is_blocking():
-                            draw_stone(raw, px, py, cell)
+                            draw_laser(raw, px, py, cell, active=True)
                         else:
-                            draw_floor(raw, px, py, cell)
+                            draw_laser(raw, px, py, cell, active=False)
                     elif tcls == "Warp":
                         # Portals are visible by default (P toggles reveal/hide).
                         if getattr(self, "_show_warps", True):
@@ -537,6 +540,21 @@ class GUIEngine:
                             if self.level.player_invisible:
                                 # drowned in the void: character is gone
                                 draw_void(raw, px, py, cell)
+                            elif (under is not None
+                                    and under.__class__.__name__ == "LaserDoor"
+                                    and under.is_lethal()):
+                                # vaporised by live beams: ash pile
+                                draw_ash(raw, px, py, cell)
+                            elif (under is not None
+                                    and under.__class__.__name__ in (
+                                        "HiddenBoom", "BorderMine", "HardMine")):
+                                # blown apart by a mine: ash pile
+                                draw_ash(raw, px, py, cell)
+                            elif (under is not None
+                                    and under.__class__.__name__ == "Trap"
+                                    and under.is_lethal()):
+                                # killed by a live trap: skeleton
+                                draw_skeleton(raw, px, py, cell)
                             elif under is not None and under.is_lethal():
                                 draw_boom_explosion(raw, px, py, cell)
                             else:
@@ -566,8 +584,14 @@ class GUIEngine:
                                  self.level.player.x == gx and
                                  self.level.player.y == gy)
 
-                    if is_player and self.level.dead and cls in ("HiddenBoom", "BorderMine"):
-                        draw_boom_explosion(raw, px, py, cell)
+                    if is_player and self.level.dead and cls in ("HiddenBoom", "BorderMine", "HardMine"):
+                        draw_ash(raw, px, py, cell)
+                    elif (is_player and self.level.dead and cls == "LaserDoor"
+                            and occ is not None and occ.is_lethal()):
+                        draw_ash(raw, px, py, cell)
+                    elif (is_player and self.level.dead and cls == "Trap"
+                            and occ is not None and occ.is_lethal()):
+                        draw_skeleton(raw, px, py, cell)
                     elif is_player and self.level.dead and self.level.player_invisible:
                         # Fell into the void: the character is gone — only the
                         # empty pit is drawn.

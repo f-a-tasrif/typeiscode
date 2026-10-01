@@ -39,6 +39,12 @@ def _check_photo_root():
     if cur is not _photo_root:
         _portal_photos.clear()
         _boom_photos.clear()
+        _laser_photos.clear()
+        _ash_photos.clear()
+        _stone_photos.clear()
+        _door_photos.clear()
+        _trap_photos.clear()
+        _skel_photos.clear()
         _panel_photos.clear()
         _photo_root = cur
 
@@ -434,7 +440,18 @@ def draw_void(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_door_closed(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Closed orange door with keyhole, raised frame."""
+    """Closed wooden door from assets/door.jpeg, else procedural
+    orange door with keyhole and raised frame."""
+    photo = None
+    try:
+        photo = _door_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        draw_floor(canvas, x, y, size)
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1b1f3f", outline="#242850", width=1)
     _bevel(canvas, x, y, size, FLOOR_SHADOW, FLOOR_HI,
@@ -490,7 +507,16 @@ def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Red danger zone with spike triangles, raised hazard plate."""
+    """Live trap — digital-rain art from assets/trap.gif, else spikes."""
+    photo = None
+    try:
+        photo = _trap_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#2a1015", outline="#4a2025", width=1)
     _bevel(canvas, x, y, size, "#5a2025", "#0d0508",
@@ -579,7 +605,17 @@ def draw_circuit_slot(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_stone(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Solid stone block — grey stone-brick wall, heavier than Wall."""
+    """Solid stone block from assets/stone.jpeg, else grey brickwork."""
+    photo = None
+    try:
+        photo = _stone_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        draw_floor(canvas, x, y, size)
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=STONE_WALL, outline=STONE_MORTAR, width=1)
     # brick courses, same structure as draw_wall but larger blocks
@@ -916,3 +952,384 @@ def _boom_photo(size: int):
     photo = _PILImageTk.PhotoImage(fit)
     _boom_photos[key] = photo
     return photo
+
+
+# ── laser-gate photo support (assets/laser.png, transparent) ─────────
+LASER_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "assets", "laser.png")
+_laser_src = None         # cached RGBA PIL image, or False when unavailable
+_laser_photos: dict[int, object] = {}  # cell size -> PhotoImage
+
+
+def _load_laser_src():
+    """Load the laser-gate art (assets/laser.png) as RGBA.
+
+    The file already carries transparency, so it is used as-is after an
+    autocrop to the non-transparent bbox.  Returns a PIL RGBA image, or
+    None when Pillow / the file is missing.  The result (including the
+    miss) is cached.
+    """
+    global _laser_src
+    if _laser_src is not None:
+        return _laser_src or None
+    if not _PIL_AVAILABLE:
+        _laser_src = False
+        return None
+    try:
+        img = _PILImage.open(LASER_IMAGE).convert("RGBA")
+    except (OSError, FileNotFoundError):
+        _laser_src = False
+        return None
+    alpha = img.getchannel("A")
+    bbox = alpha.point(lambda v: 255 if v > 8 else 0).getbbox()
+    if bbox:
+        img = img.crop(bbox)
+    _laser_src = img
+    return img
+
+
+def _laser_photo(size: int):
+    """PhotoImage of the laser gate fitted into a `size`px cell (cached)."""
+    _check_photo_root()
+    key = max(8, int(size))
+    if key in _laser_photos:
+        return _laser_photos[key]
+    src = _load_laser_src()
+    if src is None:
+        return None
+    side = max(8, int(size * 0.92))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    photo = _PILImageTk.PhotoImage(fit)
+    _laser_photos[key] = photo
+    return photo
+
+
+def draw_laser(canvas: tk.Canvas, x: int, y: int, size: int,
+               active: bool = True):
+    """Laser gate — red beams between stone emitters (assets/laser.png).
+
+    Mirrors the reference art: grey emitter caps top/bottom with four
+    vertical red beams.  Without Pillow / the asset / a Tk root, falls
+    back to procedural beams so tests stay headless-safe.  When
+    `active` is False the beams are off and only the floor shows.
+    """
+    draw_floor(canvas, x, y, size)
+    if not active:
+        return
+    photo = None
+    try:
+        photo = _laser_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
+    # Procedural fallback: grey emitter bars + 4 red beams w/ white core.
+    m = max(2, size // 10)
+    cap_h = max(3, size // 6)
+    canvas.create_rectangle(x + 1, y + 1, x + size - 1, y + 1 + cap_h,
+                            fill="#5a5e78", outline="#383b52", width=1)
+    canvas.create_rectangle(x + 1, y + size - 1 - cap_h,
+                            x + size - 1, y + size - 1,
+                            fill="#5a5e78", outline="#383b52", width=1)
+    beams = 4
+    for i in range(beams):
+        bx = x + m + (size - 2 * m) * (i + 0.5) / beams
+        bw = max(2, size // 14)
+        canvas.create_line(bx, y + 1 + cap_h, bx, y + size - 1 - cap_h,
+                           fill="#e34b3e", width=bw)
+        canvas.create_line(bx, y + 1 + cap_h, bx, y + size - 1 - cap_h,
+                           fill="#fff0f0", width=max(1, bw // 3))
+
+
+# ── ash-pile photo support (assets/ash.jpeg, white background) ───────
+ASH_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "assets", "ash.jpeg")
+_ash_src = None           # cached RGBA PIL image, or False when unavailable
+_ash_photos: dict[int, object] = {}  # cell size -> PhotoImage
+
+
+def _load_ash_src():
+    """Load the ash-pile art (assets/ash.jpeg) keyed to RGBA.
+
+    The file has a near-white background, so it is keyed to transparent
+    (like the bomb art), autocropped and cached.  Returns a PIL RGBA
+    image, or None when Pillow / the file is missing.
+    """
+    global _ash_src
+    if _ash_src is not None:
+        return _ash_src or None
+    if not _PIL_AVAILABLE:
+        _ash_src = False
+        return None
+    try:
+        img = _PILImage.open(ASH_IMAGE).convert("RGB")
+    except (OSError, FileNotFoundError):
+        _ash_src = False
+        return None
+    gray = img.convert("L")
+    content = gray.point(lambda v: 0 if v > 235 else 255)
+    bbox = content.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+        gray = gray.crop(bbox)
+    # soft alpha ramp so anti-aliased edges blend instead of clipping
+    alpha = gray.point(
+        lambda v: 0 if v >= 245 else (255 if v <= 190 else int((245 - v) * 255 / 55)))
+    img = img.convert("RGBA")
+    img.putalpha(alpha)
+    _ash_src = img
+    return img
+
+
+def _ash_photo(size: int):
+    """PhotoImage of the ash pile fitted into a `size`px cell (cached)."""
+    _check_photo_root()
+    key = max(8, int(size))
+    if key in _ash_photos:
+        return _ash_photos[key]
+    src = _load_ash_src()
+    if src is None:
+        return None
+    side = max(8, int(size * 0.92))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    photo = _PILImageTk.PhotoImage(fit)
+    _ash_photos[key] = photo
+    return photo
+
+
+def draw_ash(canvas: tk.Canvas, x: int, y: int, size: int):
+    """Ash pile left when the laser vaporises the character.
+
+    Grey mound from assets/ash.jpeg on the floor.  Without Pillow / the
+    asset / a Tk root, falls back to a procedural mound so tests stay
+    headless-safe.
+    """
+    draw_floor(canvas, x, y, size)
+    photo = None
+    try:
+        photo = _ash_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
+    # Procedural fallback: dark grey pixel mound with scattered crumbs.
+    cx = x + size // 2
+    base_y = y + size - max(2, size // 6)
+    half = max(3, size // 2 - max(2, size // 6))
+    rows = max(3, size // 8)
+    for r in range(rows):
+        w = int(half * (r + 1) / rows)
+        ry = base_y - int((size // 3) * r / max(1, rows - 1)) if rows > 1 else base_y
+        shade = ("#2a2a2e", "#3a3a40", "#4a4a52")[min(r, 2)]
+        canvas.create_rectangle(cx - w, ry - max(1, size // 12),
+                                cx + w, ry,
+                                fill=shade, outline="")
+
+
+def _white_keyed_src(path: str):
+    """Load an RGB white-background sprite as RGBA (white -> transparent).
+
+    Autocrops to the non-white bbox and applies a soft alpha ramp so
+    anti-aliased edges blend.  Returns a PIL RGBA image, or None when
+    Pillow / the file is missing.
+    """
+    if not _PIL_AVAILABLE:
+        return None
+    try:
+        img = _PILImage.open(path).convert("RGB")
+    except (OSError, FileNotFoundError):
+        return None
+    gray = img.convert("L")
+    content = gray.point(lambda v: 0 if v > 235 else 255)
+    bbox = content.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+        gray = gray.crop(bbox)
+    alpha = gray.point(
+        lambda v: 0 if v >= 245 else (255 if v <= 190 else int((245 - v) * 255 / 55)))
+    img = img.convert("RGBA")
+    img.putalpha(alpha)
+    return img
+
+
+# ── stone-pile photo support (assets/stone.jpeg, white background) ──
+STONE_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "assets", "stone.jpeg")
+_stone_src = None         # cached RGBA PIL image, or False when unavailable
+_stone_photos: dict[int, object] = {}  # cell size -> PhotoImage
+
+
+def _load_stone_src():
+    """Load the stone-pile art keyed to RGBA (cached, incl. the miss)."""
+    global _stone_src
+    if _stone_src is not None:
+        return _stone_src or None
+    _stone_src = _white_keyed_src(STONE_IMAGE) or False
+    return _stone_src or None
+
+
+def _stone_photo(size: int):
+    """PhotoImage of the stone pile fitted into a `size`px cell (cached)."""
+    _check_photo_root()
+    key = max(8, int(size))
+    if key in _stone_photos:
+        return _stone_photos[key]
+    src = _load_stone_src()
+    if src is None:
+        return None
+    side = max(8, int(size * 0.92))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    photo = _PILImageTk.PhotoImage(fit)
+    _stone_photos[key] = photo
+    return photo
+
+
+# ── wooden-door photo support (assets/door.jpeg, white background) ──
+DOOR_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "assets", "door.jpeg")
+_door_src = None          # cached RGBA PIL image, or False when unavailable
+_door_photos: dict[int, object] = {}  # cell size -> PhotoImage
+
+
+def _load_door_src():
+    """Load the wooden-door art keyed to RGBA (cached, incl. the miss)."""
+    global _door_src
+    if _door_src is not None:
+        return _door_src or None
+    _door_src = _white_keyed_src(DOOR_IMAGE) or False
+    return _door_src or None
+
+
+def _door_photo(size: int):
+    """PhotoImage of the wooden door fitted into a `size`px cell (cached)."""
+    _check_photo_root()
+    key = max(8, int(size))
+    if key in _door_photos:
+        return _door_photos[key]
+    src = _load_door_src()
+    if src is None:
+        return None
+    side = max(8, int(size * 0.92))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    photo = _PILImageTk.PhotoImage(fit)
+    _door_photos[key] = photo
+    return photo
+
+
+# ── live-trap photo support (assets/trap.gif, opaque full-bleed) ────
+TRAP_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "assets", "trap.gif")
+_trap_src = None          # cached RGBA PIL image, or False when unavailable
+_trap_photos: dict[int, object] = {}  # cell size -> PhotoImage
+
+
+def _load_trap_src():
+    """Load the first frame of the trap GIF as RGBA (cached, incl. miss).
+
+    The art is a full-bleed opaque texture, so no keying or cropping is
+    applied — tiles don't animate, frame 0 stands in for the loop.
+    """
+    global _trap_src
+    if _trap_src is not None:
+        return _trap_src or None
+    if not _PIL_AVAILABLE:
+        _trap_src = False
+        return None
+    try:
+        img = _PILImage.open(TRAP_IMAGE)
+        img.seek(0)
+        img = img.convert("RGBA")
+    except (OSError, FileNotFoundError):
+        _trap_src = False
+        return None
+    _trap_src = img
+    return img
+
+
+def _trap_photo(size: int):
+    """PhotoImage of the live trap fitted into a `size`px cell (cached)."""
+    _check_photo_root()
+    key = max(8, int(size))
+    if key in _trap_photos:
+        return _trap_photos[key]
+    src = _load_trap_src()
+    if src is None:
+        return None
+    side = max(8, int(size))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    photo = _PILImageTk.PhotoImage(fit)
+    _trap_photos[key] = photo
+    return photo
+
+
+# ── skeleton photo support (assets/skeleton.png, white background) ──
+SKELETON_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "assets", "skeleton.png")
+_skel_src = None          # cached RGBA PIL image, or False when unavailable
+_skel_photos: dict[int, object] = {}  # cell size -> PhotoImage
+
+
+def _load_skel_src():
+    """Load the skeleton art keyed to RGBA (cached, incl. the miss)."""
+    global _skel_src
+    if _skel_src is not None:
+        return _skel_src or None
+    _skel_src = _white_keyed_src(SKELETON_IMAGE) or False
+    return _skel_src or None
+
+
+def _skel_photo(size: int):
+    """PhotoImage of the skeleton fitted into a `size`px cell (cached)."""
+    _check_photo_root()
+    key = max(8, int(size))
+    if key in _skel_photos:
+        return _skel_photos[key]
+    src = _load_skel_src()
+    if src is None:
+        return None
+    side = max(8, int(size * 0.92))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    photo = _PILImageTk.PhotoImage(fit)
+    _skel_photos[key] = photo
+    return photo
+
+
+def draw_skeleton(canvas: tk.Canvas, x: int, y: int, size: int):
+    """Skeleton left when a live trap kills the character.
+
+    Pixel skull from assets/skeleton.png on the floor.  Without Pillow /
+    the asset / a Tk root, falls back to a procedural skull so tests stay
+    headless-safe.
+    """
+    draw_floor(canvas, x, y, size)
+    photo = None
+    try:
+        photo = _skel_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
+    # Procedural fallback: pale skull oval, dark eye sockets, jaw lines.
+    cx, cy = x + size // 2, y + size // 2
+    r = max(4, size // 2 - max(2, size // 8))
+    canvas.create_oval(cx - r, cy - r, cx + r, cy + int(r * 0.7),
+                       fill="#d8d8dc", outline="#0a0a0a",
+                       width=max(1, size // 24))
+    er = max(2, r // 3)
+    for dx in (-1, 1):
+        ex = cx + dx * int(r * 0.45)
+        ey = cy - int(r * 0.1)
+        canvas.create_oval(ex - er, ey - er, ex + er, ey + er,
+                           fill="#0a0a0a", outline="#0a0a0a")
