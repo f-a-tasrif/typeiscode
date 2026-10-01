@@ -107,7 +107,51 @@ CIRCUIT_SLOT_BG    = "#1e2850"
 CIRCUIT_SLOT_BORDER= "#5f7fff"
 
 
+# ── 3D palette (bevel light / shadow for faux-depth) ────────────────
+WALL_HI          = "#6a7194"
+WALL_SHADOW      = "#171927"
+FLOOR_HI         = "#2e345e"
+FLOOR_SHADOW     = "#0d1024"
+STONE_FACE_HI    = "#9aa0bd"
+STONE_SIDE       = "#3c3f58"
+CODE_SHADOW      = "#0a0c1a"
+DOOR_HI          = "#f5c080"
+DOOR_SHADOW      = "#5a2810"
+
+
 # ── helper ──────────────────────────────────────────────────────────
+def _bevel(canvas, x, y, size, light, dark, depth=None):
+    """Faux-3D chamfer: light top/left, dark bottom/right polygons.
+
+    Light comes from the top-left, so raised tiles get a bright top
+    and left edge with a dark bottom and right edge.  Inset tiles
+    (floor) should call with light/dark swapped.
+    """
+    d = max(2, size // 8) if depth is None else max(1, int(depth))
+    d = min(d, size // 3)
+    x2, y2 = x + size, y + size
+    # top — full width trapezoid
+    canvas.create_polygon(x, y, x2, y, x2 - d, y + d, x + d, y + d,
+                          fill=light, outline="")
+    # left — full height trapezoid
+    canvas.create_polygon(x, y, x + d, y + d, x + d, y2 - d, x, y2,
+                          fill=light, outline="")
+    # bottom
+    canvas.create_polygon(x, y2, x + d, y2 - d, x2 - d, y2 - d, x2, y2,
+                          fill=dark, outline="")
+    # right
+    canvas.create_polygon(x2, y, x2, y2, x2 - d, y2 - d, x2 - d, y + d,
+                          fill=dark, outline="")
+
+
+def _drop_shadow(canvas, x, y, size, dx=None, dy=None, fill=CODE_SHADOW):
+    """Offset dark rect behind a raised tile for extrusion depth."""
+    dx = max(1, size // 12) if dx is None else dx
+    dy = max(2, size // 8) if dy is None else dy
+    canvas.create_rectangle(x + dx, y + dy, x + size + dx, y + size + dy,
+                            fill=fill, outline="")
+
+
 def _inset(x, y, size, frac=0.08):
     """Return (x1, y1, x2, y2) inset by `frac` of size on each side."""
     m = max(1, int(size * frac))
@@ -147,7 +191,7 @@ def _rounded_rect(canvas, x1, y1, x2, y2, r, **kw):
 # ── entity drawing functions ────────────────────────────────────────
 
 def draw_wall(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Brick-pattern wall."""
+    """Brick-pattern wall with raised 3D bevel."""
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=WALL_BASE, outline=WALL_MORTAR, width=1)
     # Draw brick rows
@@ -165,27 +209,36 @@ def draw_wall(canvas: tk.Canvas, x: int, y: int, size: int):
             if x <= cx <= x + size:
                 canvas.create_line(cx, ry, cx, ry + int(row_h),
                                    fill=WALL_MORTAR, width=1)
+    # raised-block bevel on top of the brickwork
+    _bevel(canvas, x, y, size, WALL_HI, WALL_SHADOW)
 
 
 def draw_floor(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Subtle dark floor tile."""
+    """Subtle dark floor tile, recessed for contrast with walls."""
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=FLOOR_BASE, outline=FLOOR_LINE, width=1)
     # inner accent line
     m = max(1, size // 8)
     canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
                             fill="", outline=FLOOR_LINE, width=1)
+    # recessed bevel (inverted light): sunken pit vs raised walls
+    _bevel(canvas, x, y, size, FLOOR_SHADOW, FLOOR_HI,
+           depth=max(1, size // 12))
 
 
 def draw_goal(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Green flag on a pole."""
+    """Green flag on a pole, raised plate with 3D rim."""
     # floor background
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1a3020", outline="#2e4a3a", width=1)
+    _bevel(canvas, x, y, size, FLOOR_SHADOW, "#3a5a4a",
+           depth=max(1, size // 12))
     # pulsing glow
     m = max(2, size // 6)
     canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
                             fill=GOAL_GREEN, outline="#3ab85e", width=2)
+    _bevel(canvas, x + m, y + m, size - 2 * m, "#7de89a", "#14522a",
+           depth=max(1, size // 14))
     # pole
     pole_x = x + size // 3
     canvas.create_line(pole_x, y + size * 0.2, pole_x, y + size * 0.85,
@@ -299,9 +352,11 @@ def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_platform_solid(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Solid purple bridge with support pillars."""
+    """Solid purple bridge with support pillars, raised deck."""
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1b1f3f", outline="#242850", width=1)
+    _bevel(canvas, x, y, size, FLOOR_SHADOW, FLOOR_HI,
+           depth=max(1, size // 14))
     m = max(1, size // 8)
     # bridge deck — thick horizontal bar
     deck_y1 = y + size // 4
@@ -320,6 +375,10 @@ def draw_platform_solid(canvas: tk.Canvas, x: int, y: int, size: int):
     # deck top accent
     canvas.create_line(x + 2, deck_y1 + 1, x + size - 2, deck_y1 + 1,
                        fill="#a080ff", width=max(1, size // 24))
+    # deck drop shadow for thickness
+    dh = max(2, size // 12)
+    canvas.create_rectangle(x + 1, deck_y2, x + size - 1, deck_y2 + dh,
+                            fill=PLATFORM_PILLAR, outline="")
 
 
 def draw_platform_ghost(canvas: tk.Canvas, x: int, y: int, size: int):
@@ -353,6 +412,9 @@ def draw_void(canvas: tk.Canvas, x: int, y: int, size: int):
     # darkness swallows the whole cell
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=VOID_BG, outline=VOID_RIM, width=1)
+    # sunken rim: deep pit edge
+    _bevel(canvas, x, y, size, "#000000", VOID_GLOW,
+           depth=max(2, size // 6))
     cx, cy = x + size // 2, y + size // 2
     m = max(2, size // 8)
     outer = max(3, size // 2 - m)
@@ -372,9 +434,11 @@ def draw_void(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_door_closed(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Closed orange door with keyhole."""
+    """Closed orange door with keyhole, raised frame."""
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1b1f3f", outline="#242850", width=1)
+    _bevel(canvas, x, y, size, FLOOR_SHADOW, FLOOR_HI,
+           depth=max(1, size // 14))
     m = max(2, size // 7)
     # door body
     canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
@@ -396,12 +460,17 @@ def draw_door_closed(canvas: tk.Canvas, x: int, y: int, size: int):
     hr = max(2, size // 14)
     canvas.create_oval(hx - hr, hy - hr, hx + hr, hy + hr,
                        fill="#ffd080", outline="#cc9040")
+    # door slab bevel for raised wood
+    _bevel(canvas, x + m, y + m, size - 2 * m, DOOR_HI, DOOR_SHADOW,
+           depth=max(1, size // 14))
 
 
 def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Open door — split panels revealing passage."""
+    """Open door — split panels revealing passage (sunken)."""
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1a2a1a", outline="#2e4a2e", width=1)
+    _bevel(canvas, x, y, size, "#0d1a0d", "#3a5a3a",
+           depth=max(1, size // 14))
     m = max(2, size // 7)
     half = (size - 2 * m) // 2
     # left panel (slightly ajar)
@@ -421,9 +490,11 @@ def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int):
-    """Red danger zone with spike triangles."""
+    """Red danger zone with spike triangles, raised hazard plate."""
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#2a1015", outline="#4a2025", width=1)
+    _bevel(canvas, x, y, size, "#5a2025", "#0d0508",
+           depth=max(1, size // 14))
     m = max(2, size // 6)
     # base diamond
     cx, cy = x + size // 2, y + size // 2
@@ -464,7 +535,7 @@ def draw_trap_safe(canvas: tk.Canvas, x: int, y: int, size: int):
 
 def draw_code_block(canvas: tk.Canvas, x: int, y: int, size: int,
                     label: str, kind: str):
-    """Rounded-rectangle 'chip' with a label.  Colour varies by kind."""
+    """Rounded-rectangle 'chip' with a label, extruded 3D keycap."""
     kind_colors = {
         "CLASS":  ("#1a4a7a", "#52b0ff"),
         "PROP":   ("#1a5a4a", "#40d8a0"),
@@ -475,6 +546,10 @@ def draw_code_block(canvas: tk.Canvas, x: int, y: int, size: int,
     bg, border = kind_colors.get(kind, (BLOCK_BG, BLOCK_BORDER))
     m = max(1, size // 10)
     r = max(3, size // 6)
+    # extrusion shadow underneath for thickness
+    sx, sy = max(1, size // 16), max(2, size // 10)
+    x1s, y1s, x2s, y2s = x + m + sx, y + m + sy, x + size - m + sx, y + size - m + sy
+    _rounded_rect(canvas, x1s, y1s, x2s, y2s, r, fill=CODE_SHADOW, outline="")
     x1, y1, x2, y2 = x + m, y + m, x + size - m, y + size - m
     _rounded_rect(canvas, x1, y1, x2, y2, r, fill=bg, outline=border,
                   width=max(1, size // 20))
@@ -524,6 +599,7 @@ def draw_stone(canvas: tk.Canvas, x: int, y: int, size: int):
     # pale top edge so it reads as raised stone in dim light
     canvas.create_line(x + 1, y + 1, x + size - 1, y + 1,
                        fill=STONE_TOP, width=max(1, size // 16))
+    _bevel(canvas, x, y, size, STONE_FACE_HI, STONE_SIDE)
 
 
 def draw_stone_open(canvas: tk.Canvas, x: int, y: int, size: int):
@@ -559,6 +635,7 @@ def draw_seal_wall(canvas: tk.Canvas, x: int, y: int, size: int):
     if size >= 28:
         canvas.create_text(x + size // 2, y + size // 2, text="🔒",
                            font=("Arial", max(8, size // 3)), anchor="center")
+    _bevel(canvas, x, y, size, "#a78bfa", "#2a1a5a")
 
 
 def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int):

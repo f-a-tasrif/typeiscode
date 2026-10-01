@@ -188,6 +188,11 @@ class GUIEngine:
             self._bg_photo = bg_photo  # keep a ref so Tk does not blank it
             raw.create_image(0, 0, image=bg_photo, anchor="nw")
 
+        # board drop shadow for lifted-map 3D look
+        raw.create_rectangle(ox - 3 + 6, oy - 3 + 8,
+                             ox + board_w + 3 + 6, oy + board_h + 3 + 8,
+                             fill="#05070f", outline="")
+
         # teal glow rim around the board, like the reference mockup
         for pad, color in ((10, "#0e3a40"), (7, "#155e63"), (4, "#2aa5a0")):
             raw.create_rectangle(ox - pad, oy - pad,
