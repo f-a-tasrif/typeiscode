@@ -94,7 +94,7 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
                     tokens: list[tuple[int, int, str]], warp: list | None = None,
                     stone_mode: bool = False, rec: list | None = None,
                     f2: list | tuple | None = None,
-                    border_mines: bool = False) -> Level:
+                    border_mines: bool = False, swap_sz: bool = False) -> Level:
     """Build a global-rules level from HTML map data.
 
     `rows` are ASCII map rows, `start` is (row, col), `tokens` are
@@ -110,6 +110,9 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
     f2: [row, col] forged-flag cell for Gate.at win (map14).
     border_mines: add BorderMine ring (outer border hides always-lethal
     mines, like map10/map14 where Wall.solid = False is solvable).
+    swap_sz: when True (map16), `S` cells are Seal2 walls and `Z` cells
+    are Seal walls (the HTML purple/teal convention); otherwise the
+    legacy mapping (S=Seal, Z=Seal2) is kept for earlier maps.
     """
     W, H = len(rows[0]), len(rows)
     lvl = Level(name, W, H, RULES_REGISTRY)
@@ -144,9 +147,9 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
                 lvl.add_wall(x, y)
                 lvl.add_object(BorderMine(x, y))
             elif ch == "S":
-                lvl.add_object(SealWall(x, y))
+                lvl.add_object(Seal2Wall(x, y) if swap_sz else SealWall(x, y))
             elif ch == "Z":
-                lvl.add_object(Seal2Wall(x, y))
+                lvl.add_object(SealWall(x, y) if swap_sz else Seal2Wall(x, y))
             elif ch == "Y":
                 lvl.add_object(Seal3Wall(x, y))
             # "." = nothing
@@ -508,6 +511,27 @@ def build_level11() -> Level:
                            f2=e.get("f2"), border_mines=True)
 
 
+def build_level12() -> Level:
+    """Map 16 - Nested vaults, sealed walls & a timing window (L6).
+
+    Mechanism ported from NewMap16.html:
+    - Stone/Wall/Trap/Door rules with NOT, plus Seal/Seal2/Seal3.
+    - `S` cells follow Seal2.active (purple corridor seals: one plugs
+      the corridor entrance, one sits before the flag), `Z` cells follow
+      Seal.active (teal ring), `Y` follows Seal3.active (amber seal in
+      front of the flag) -- hence swap_sz=True.
+    - Striped B walls + outer border hide always-lethal mines, so
+      Wall.solid = False opens plain walls but never the striped ones.
+    - 7 hidden portal pairs; blocks can never be pushed onto mines/portals.
+    - Timing window: the Door rule must only be completed AFTER Seal2 is
+      done (teal ring stays open while Door is shut and Trap is off).
+    """
+    e = MAPS[8]
+    return _build_from_map("12 - Nested Vaults & Timing Window", e["rows"],
+                           e["start"], e["tokens"], warp=e.get("warp"),
+                           stone_mode=True, border_mines=True, swap_sz=True)
+
+
 ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4,
               build_level5, build_level6, build_level7, build_level8,
-              build_level9, build_level10, build_level11]
+              build_level9, build_level10, build_level11, build_level12]
