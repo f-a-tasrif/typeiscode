@@ -41,6 +41,18 @@ BOARD_BG       = "#0e1225"
 BOARD_BORDER   = "#3a4a80"
 BOARD_PADDING  = 8
 
+# ── follow-camera (rooms come closer) ─────────────────────────────
+# Instead of shrinking the whole map to fit, keep cells large and show
+# a viewport that follows the player. Small levels still fit entirely;
+# big levels (e.g. 44-50 cols) render zoomed-in around the player.
+CAM_VIEW_COLS  = 20   # target visible columns when zoomed
+CAM_VIEW_ROWS  = 13   # target visible rows when zoomed
+CAM_MAX_CELL   = 56   # cap for zoomed cell size (px)
+CAM_MIN_CELL   = 8    # floor so tiny windows never divide by zero
+CAM_SMOOTH     = 1.0  # 1.0 = snap to player; <1.0 = eased follow
+CAM_ZOOM_MIN   = 0.6
+CAM_ZOOM_MAX   = 2.0
+
 # ── per-level hints (HINTS panel) ───────────────────────────────────
 # One entry per level in ALL_LEVELS, index-aligned with level_index.
 # Only level 8 carries hint text; all other entries are blank and the
@@ -84,6 +96,10 @@ class GUIEngine:
         self._show_warps = True
         self._label_photos: dict[str, object] = {}
         self._panel_bg_key = None
+        # follow-camera state: smoothed center in cell coords + zoom factor
+        self._zoom = 1.0
+        self._cam_cx: float | None = None
+        self._cam_cy: float | None = None
 
         # window + layout
         self.window = Window("Type Is Code", 1280, 680, bg=BACKGROUND,
@@ -132,6 +148,7 @@ class GUIEngine:
             self.game_completed = False
         self.level = self.current_builder()()
         self.level.reset()
+        self._snap_camera_to_player()
 
     def next_level(self) -> bool:
         if self.level_index + 1 >= len(ALL_LEVELS):
@@ -140,11 +157,81 @@ class GUIEngine:
         self.level_index += 1
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
+        self._snap_camera_to_player()
         return True
 
     # ── responsive resize ───────────────────────────────────────────
     def _on_resize(self, w: int, h: int):
         self.render_frame(self._last_message)
+
+    # ── follow-camera ─────────────────────────────────────────────
+    def _snap_camera_to_player(self):
+        """Center the camera on the player (called on level load)."""
+        p = getattr(self.level, "player", None)
+        if p is not None:
+            self._cam_cx = p.x + 0.5
+            self._cam_cy = p.y + 0.5
+        else:
+            self._cam_cx = self.level.width / 2
+            self._cam_cy = self.level.height / 2
+
+    def _compute_camera(self, cols: int, rows: int,
+                        cw: int, ch: int, avail_w: int, avail_h: int):
+        """Return (cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy).
+
+        Small boards fit entirely (no scrolling). Big boards keep a
+        large cell size and scroll a viewport that follows the player,
+        so rooms stay close to the screen.
+        """
+        import math
+
+        fit = min(avail_w // max(1, cols), avail_h // max(1, rows))
+        fit = max(1, fit)
+        want = min(avail_w // CAM_VIEW_COLS, avail_h // CAM_VIEW_ROWS)
+        want = max(CAM_MIN_CELL, want)
+        want = min(want, CAM_MAX_CELL)
+        want = max(1, int(round(want * self._zoom)))
+
+        if want <= fit:
+            # Whole board fits at a comfortable size -- no scrolling.
+            cell = fit
+            view_cols, view_rows = cols, rows
+            cam_x0 = 0.0
+            cam_y0 = 0.0
+            board_w = cell * cols
+            board_h = cell * rows
+            ox = (cw - board_w) // 2
+            oy = (ch - board_h) // 2
+            self._snap_camera_to_player()
+            return cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy
+
+        # Zoomed mode: keep cells big, scroll to the player.
+        cell = want
+        view_cols = max(1, avail_w // cell)
+        view_rows = max(1, avail_h // cell)
+        view_cols = min(view_cols, cols)
+        view_rows = min(view_rows, rows)
+
+        p = getattr(self.level, "player", None)
+        tx = (p.x + 0.5) if p is not None else cols / 2
+        ty = (p.y + 0.5) if p is not None else rows / 2
+        if self._cam_cx is None or self._cam_cy is None:
+            self._cam_cx, self._cam_cy = tx, ty
+        else:
+            k = CAM_SMOOTH
+            self._cam_cx += (tx - self._cam_cx) * k
+            self._cam_cy += (ty - self._cam_cy) * k
+
+        max_x0 = max(0.0, float(cols - view_cols))
+        max_y0 = max(0.0, float(rows - view_rows))
+        cam_x0 = min(max(self._cam_cx - view_cols / 2, 0.0), max_x0)
+        cam_y0 = min(max(self._cam_cy - view_rows / 2, 0.0), max_y0)
+
+        board_w = view_cols * cell
+        board_h = view_rows * cell
+        ox = (cw - board_w) // 2
+        oy = (ch - board_h) // 2
+        return cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy
 
     # ── rendering ───────────────────────────────────────────────────
     def render_frame(self, message: str = ""):
@@ -166,17 +253,22 @@ class GUIEngine:
 
         avail_w = cw - 2 * BOARD_PADDING
         avail_h = ch - 2 * BOARD_PADDING
-        # Shrink the cells so the whole board always fits the canvas.
-        # A fixed minimum (e.g. 12px) overflows small windows on wide
-        # levels -- level 10 has 50 columns, so its edge portals were
-        # clipped off-screen and looked "invisible" after resizing.
-        cell = min(avail_w // cols, avail_h // rows)
-        cell = max(1, cell)
+        cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy = \
+            self._compute_camera(cols, rows, cw, ch, avail_w, avail_h)
+        board_w = view_cols * cell
+        board_h = view_rows * cell
+        # visible cell range (clipped to the board)
+        import math as _math
+        x0i = max(0, int(_math.floor(cam_x0)))
+        y0i = max(0, int(_math.floor(cam_y0)))
+        x1i = min(cols, int(_math.ceil(cam_x0 + view_cols)))
+        y1i = min(rows, int(_math.ceil(cam_y0 + view_rows)))
 
-        board_w = cell * cols
-        board_h = cell * rows
-        ox = (cw - board_w) // 2   # center board horizontally
-        oy = (ch - board_h) // 2   # center board vertically
+        def _px(gx: int) -> int:
+            return int(round(ox + (gx - cam_x0) * cell))
+
+        def _py(gy: int) -> int:
+            return int(round(oy + (gy - cam_y0) * cell))
 
         # night-crystal backdrop behind the board: left crop of the ONE
         # window-sized image, so it continues seamlessly into the panel
@@ -214,10 +306,10 @@ class GUIEngine:
         flag_moved = bool(PropertyRegistry.get("Flag", "moved", False))
         flag2 = getattr(self.level, "flag2", None)
         if is_global:
-            for gy in range(rows):
-                for gx in range(cols):
-                    px = ox + gx * cell
-                    py = oy + gy * cell
+            for gy in range(y0i, y1i):
+                for gx in range(x0i, x1i):
+                    px = _px(gx)
+                    py = _py(gy)
                     tile = self.level.tile_at(gx, gy)
                     tile_cls = tile.__class__.__name__
 
@@ -295,10 +387,10 @@ class GUIEngine:
                         else:
                             draw_player(raw, px, py, cell)
         else:
-            for gy in range(rows):
-                for gx in range(cols):
-                    px = ox + gx * cell
-                    py = oy + gy * cell
+            for gy in range(y0i, y1i):
+                for gx in range(x0i, x1i):
+                    px = _px(gx)
+                    py = _py(gy)
                     tile = self.level.tile_at(gx, gy)
                     tile_cls = tile.__class__.__name__
 
@@ -392,10 +484,14 @@ class GUIEngine:
         help_text = (
             "W / ↑  = up        A / ← = left\n"
             "S / ↓  = down      D / → = right\n"
-            "R = restart level\n"
+            "R = restart level   C = center camera\n"
+            "+ / - = zoom in / out\n"
             "Q = quit\n\n"
             "Push code blocks onto the circuit line so\n"
-            "the statement compiles.  CLASS PROP = VALUE"
+            "the statement compiles.  CLASS PROP = VALUE\n\n"
+            "Big maps use a follow-camera: the view\n"
+            "stays zoomed on your room and scrolls\n"
+            "as you move."
         )
         self.help_view.set_text(help_text)
         # Hints panel shows only when the current level carries hint
@@ -472,7 +568,7 @@ class GUIEngine:
             self.window.root.destroy()
             return
         if key == "h":
-            self.render_frame("Arrow keys or W/A/S/D to move.  R = restart.  Q = quit.")
+            self.render_frame("Arrows/WASD move. R=restart. +/-=zoom. C=center. Q=quit.")
             return
         if key == "r":
             from_start = self.game_completed
@@ -483,6 +579,18 @@ class GUIEngine:
         if key == "p":
             self._show_warps = not getattr(self, "_show_warps", False)
             self.render_frame("Portals " + ("revealed." if self._show_warps else "hidden."))
+            return
+        if key in ("plus", "equal", "kp_add"):
+            self._zoom = min(CAM_ZOOM_MAX, self._zoom + 0.15)
+            self.render_frame(f"Zoom {self._zoom:.2f}x -- rooms closer.")
+            return
+        if key in ("minus", "kp_subtract"):
+            self._zoom = max(CAM_ZOOM_MIN, self._zoom - 0.15)
+            self.render_frame(f"Zoom {self._zoom:.2f}x -- see more rooms.")
+            return
+        if key == "c":
+            self._snap_camera_to_player()
+            self.render_frame("Camera centered on player.")
             return
         if key not in ("w", "a", "s", "d"):
             return
