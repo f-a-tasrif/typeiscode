@@ -49,7 +49,11 @@ CAM_VIEW_COLS  = 20   # target visible columns when zoomed
 CAM_VIEW_ROWS  = 13   # target visible rows when zoomed
 CAM_MAX_CELL   = 56   # cap for zoomed cell size (px)
 CAM_MIN_CELL   = 8    # floor so tiny windows never divide by zero
-CAM_SMOOTH     = 1.0  # 1.0 = snap to player; <1.0 = eased follow
+CAM_FRAME_MS   = 50   # animation tick (~20fps: smooth enough, kind to Tk)
+CAM_LERP       = 0.35 # per-tick easing toward the player (higher = snappier)
+CAM_EPS        = 0.03 # stop animating below this distance (cells)
+CAM_ZOOM_LERP  = 0.35 # per-tick easing for smooth zoom
+CAM_ZOOM_EPS   = 0.01
 CAM_ZOOM_MIN   = 0.6
 CAM_ZOOM_MAX   = 2.0
 
@@ -97,9 +101,15 @@ class GUIEngine:
         self._label_photos: dict[str, object] = {}
         self._panel_bg_key = None
         # follow-camera state: smoothed center in cell coords + zoom factor
+        # _cam_cx/_cam_cy/_zoom_cur are what is drawn; _zoom is the target.
+        # A Tk `after` loop eases the drawn values toward the target so
+        # movement glides instead of snapping.
         self._zoom = 1.0
+        self._zoom_cur = 1.0
         self._cam_cx: float | None = None
         self._cam_cy: float | None = None
+        self._cam_anim: str | None = None
+        self._panel_cache: tuple | None = None
 
         # window + layout
         self.window = Window("Type Is Code", 1280, 680, bg=BACKGROUND,
@@ -146,6 +156,7 @@ class GUIEngine:
         if from_start or self.game_completed:
             self.level_index = 0
             self.game_completed = False
+        self._cancel_camera_anim()
         self.level = self.current_builder()()
         self.level.reset()
         self._snap_camera_to_player()
@@ -154,6 +165,7 @@ class GUIEngine:
         if self.level_index + 1 >= len(ALL_LEVELS):
             self.game_completed = True
             return False
+        self._cancel_camera_anim()
         self.level_index += 1
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
@@ -167,6 +179,7 @@ class GUIEngine:
     # ── follow-camera ─────────────────────────────────────────────
     def _snap_camera_to_player(self):
         """Center the camera on the player (called on level load)."""
+        self._cancel_camera_anim()
         p = getattr(self.level, "player", None)
         if p is not None:
             self._cam_cx = p.x + 0.5
@@ -174,6 +187,91 @@ class GUIEngine:
         else:
             self._cam_cx = self.level.width / 2
             self._cam_cy = self.level.height / 2
+        self._zoom_cur = self._zoom
+
+    def _camera_target(self) -> tuple[float, float]:
+        """Where the camera wants to be (player center, or map center)."""
+        p = getattr(self.level, "player", None)
+        if p is not None:
+            return p.x + 0.5, p.y + 0.5
+        return self.level.width / 2, self.level.height / 2
+
+    def _camera_needs_anim(self) -> bool:
+        """True while the drawn camera/zoom still lags behind the target."""
+        if self._cam_cx is None or self._cam_cy is None:
+            return True
+        tx, ty = self._camera_target()
+        if abs(tx - self._cam_cx) > CAM_EPS:
+            return True
+        if abs(ty - self._cam_cy) > CAM_EPS:
+            return True
+        if abs(self._zoom - self._zoom_cur) > CAM_ZOOM_EPS:
+            return True
+        return False
+
+    def _cancel_camera_anim(self):
+        anim, self._cam_anim = self._cam_anim, None
+        if anim is not None:
+            try:
+                self.window.root.after_cancel(anim)
+            except Exception:
+                pass
+
+    def _nudge_camera_toward_target(self, alpha: float = 0.6):
+        """Pre-step drawn camera toward the player before a full render.
+
+        Movement keys call this so the character reads instantly while
+        the remaining distance still glides in cheap board-only ticks.
+        """
+        try:
+            tx, ty = self._camera_target()
+        except Exception:
+            return
+        if self._cam_cx is None or self._cam_cy is None:
+            self._cam_cx, self._cam_cy = tx, ty
+        else:
+            self._cam_cx += (tx - self._cam_cx) * alpha
+            self._cam_cy += (ty - self._cam_cy) * alpha
+        try:
+            self._zoom_cur += (self._zoom - self._zoom_cur) * alpha
+        except Exception:
+            pass
+
+    def _request_camera_anim(self):
+        if self._cam_anim is not None:
+            return
+        if not self._camera_needs_anim():
+            return
+        try:
+            self._cam_anim = self.window.root.after(CAM_FRAME_MS, self._camera_tick)
+        except Exception:
+            self._cam_anim = None
+
+    def _camera_tick(self):
+        """Ease drawn camera/zoom toward the target, then redraw board only.
+
+        Ticks redraw just the canvas (no panel/text/backdrop work) so
+        key handling stays responsive while the view glides.
+        """
+        self._cam_anim = None
+        try:
+            tx, ty = self._camera_target()
+            if self._cam_cx is None or self._cam_cy is None:
+                self._cam_cx, self._cam_cy = tx, ty
+                self._zoom_cur = self._zoom
+            else:
+                self._cam_cx += (tx - self._cam_cx) * CAM_LERP
+                self._cam_cy += (ty - self._cam_cy) * CAM_LERP
+                self._zoom_cur += (self._zoom - self._zoom_cur) * CAM_ZOOM_LERP
+                if not self._camera_needs_anim():
+                    # Close enough: snap exactly to avoid endless drift.
+                    self._cam_cx, self._cam_cy = tx, ty
+                    self._zoom_cur = self._zoom
+            self.render_frame(self._last_message, board_only=True)
+        except Exception:
+            # Never let a background tick kill the game (e.g. window
+            # destroyed mid-animation).
+            self._cam_anim = None
 
     def _compute_camera(self, cols: int, rows: int,
                         cw: int, ch: int, avail_w: int, avail_h: int):
@@ -181,16 +279,19 @@ class GUIEngine:
 
         Small boards fit entirely (no scrolling). Big boards keep a
         large cell size and scroll a viewport that follows the player,
-        so rooms stay close to the screen.
+        so rooms stay close to the screen.  The drawn camera
+        (_cam_cx/_cam_cy/_zoom_cur) is eased toward the player by the
+        animation loop; this method only reads it, never steps it.
         """
         import math
 
+        zoom_cur = getattr(self, "_zoom_cur", getattr(self, "_zoom", 1.0))
         fit = min(avail_w // max(1, cols), avail_h // max(1, rows))
         fit = max(1, fit)
         want = min(avail_w // CAM_VIEW_COLS, avail_h // CAM_VIEW_ROWS)
         want = max(CAM_MIN_CELL, want)
         want = min(want, CAM_MAX_CELL)
-        want = max(1, int(round(want * self._zoom)))
+        want = max(1, int(round(want * zoom_cur)))
 
         if want <= fit:
             # Whole board fits at a comfortable size -- no scrolling.
@@ -202,7 +303,6 @@ class GUIEngine:
             board_h = cell * rows
             ox = (cw - board_w) // 2
             oy = (ch - board_h) // 2
-            self._snap_camera_to_player()
             return cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy
 
         # Zoomed mode: keep cells big, scroll to the player.
@@ -212,15 +312,9 @@ class GUIEngine:
         view_cols = min(view_cols, cols)
         view_rows = min(view_rows, rows)
 
-        p = getattr(self.level, "player", None)
-        tx = (p.x + 0.5) if p is not None else cols / 2
-        ty = (p.y + 0.5) if p is not None else rows / 2
+        tx, ty = self._camera_target()
         if self._cam_cx is None or self._cam_cy is None:
             self._cam_cx, self._cam_cy = tx, ty
-        else:
-            k = CAM_SMOOTH
-            self._cam_cx += (tx - self._cam_cx) * k
-            self._cam_cy += (ty - self._cam_cy) * k
 
         max_x0 = max(0.0, float(cols - view_cols))
         max_y0 = max(0.0, float(rows - view_rows))
@@ -234,11 +328,19 @@ class GUIEngine:
         return cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy
 
     # ── rendering ───────────────────────────────────────────────────
-    def render_frame(self, message: str = ""):
-        self._last_message = message or ""
-        # settle pending geometry so the canvas reports its current size
-        # (otherwise the board is drawn for the previous window size)
-        self.window.root.update_idletasks()
+    def render_frame(self, message: str = "", board_only: bool = False):
+        # Full renders own the message slot; camera ticks pass the
+        # stored message back and must not clear it, and they skip all
+        # panel work so input stays responsive while gliding.
+        if not board_only:
+            self._last_message = message or ""
+        else:
+            message = self._last_message
+        if not board_only:
+            # settle pending geometry so the canvas reports its current
+            # size (otherwise the board is drawn for the previous size).
+            # Ticks skip this: it forces layout and costs input latency.
+            self.window.root.update_idletasks()
         self.canvas.clear()
         raw = self.canvas.raw  # direct tk.Canvas for tile_renderer
 
@@ -455,59 +557,71 @@ class GUIEngine:
                             draw_code_block(raw, px, py, cell, label, kind)
 
         # ── info panel ──
-        lvl_num = min(self.level_index + 1, len(ALL_LEVELS))
-        if self.game_completed:
-            self.status_label.configure(
-                text=f"✅  ALL {len(ALL_LEVELS)} LEVELS COMPLETE!",
-                fg=SUCCESS_COLOR)
-        else:
-            self.status_label.configure(
-                text=f"Level {lvl_num}/{len(ALL_LEVELS)}:  {self.level.name}",
-                fg=TEXT_COLOR)
-
-        self.moves_label.configure(text=f"Moves: {self.level.moves}")
-        # Game feedback message — previously stored but never shown.
-        if self._last_message:
-            msg_fg = DANGER_COLOR if self.level.dead else TEXT_BODY
-            self.message_label.configure(text=f"▶ {self._last_message}", fg=msg_fg)
-            if not self.message_label.winfo_ismapped():
-                self.message_label.pack(fill="x", padx=12, pady=5, anchor="nw")
-        else:
-            self.message_label.pack_forget()
+        # Camera ticks redraw only the canvas and return early: panel
+        # Text/label/backdrop work is what made keys feel late.
+        if board_only:
+            self._request_camera_anim()
+            return
         press = getattr(self.level, "fusion_press_count", 0)
-        if press > 0:
-            self.message_label.configure(
-                text=f"⚙ Stone. + open: {press}/3 presses to fuse",
-                fg=ACCENT)
-            if not self.message_label.winfo_ismapped():
-                self.message_label.pack(fill="x", padx=12, pady=5, anchor="nw")
-        help_text = (
-            "W / ↑  = up        A / ← = left\n"
-            "S / ↓  = down      D / → = right\n"
-            "R = restart level   C = center camera\n"
-            "+ / - = zoom in / out\n"
-            "Q = quit\n\n"
-            "Push code blocks onto the circuit line so\n"
-            "the statement compiles.  CLASS PROP = VALUE\n\n"
-            "Big maps use a follow-camera: the view\n"
-            "stays zoomed on your room and scrolls\n"
-            "as you move."
-        )
-        self.help_view.set_text(help_text)
-        # Hints panel shows only when the current level carries hint
-        # text (currently level 8); otherwise the section stays hidden.
         hint = LEVEL_HINTS[self.level_index] if 0 <= self.level_index < len(LEVEL_HINTS) else ""
-        if not self.game_completed and hint:
-            if not self.hints_label.winfo_ismapped():
-                self.hints_label.pack(fill="x", padx=12, pady=5, anchor="nw")
-            if not self.hints_view._text.winfo_ismapped():
-                self.hints_view._text.pack(fill="x", padx=12, pady=4, anchor="nw")
-            self.hints_view.set_text(hint)
-        else:
-            self.hints_label.pack_forget()
-            self.hints_view._text.pack_forget()
+        panel_key = (self.level_index, self.level.moves, self._last_message,
+                     press, self.game_completed, hint)
+        panel_dirty = (panel_key != self._panel_cache)
+        if panel_dirty:
+            self._panel_cache = panel_key
+            lvl_num = min(self.level_index + 1, len(ALL_LEVELS))
+            if self.game_completed:
+                self.status_label.configure(
+                    text=f"✅  ALL {len(ALL_LEVELS)} LEVELS COMPLETE!",
+                    fg=SUCCESS_COLOR)
+            else:
+                self.status_label.configure(
+                    text=f"Level {lvl_num}/{len(ALL_LEVELS)}:  {self.level.name}",
+                    fg=TEXT_COLOR)
+
+            self.moves_label.configure(text=f"Moves: {self.level.moves}")
+            # Game feedback message — previously stored but never shown.
+            if self._last_message:
+                msg_fg = DANGER_COLOR if self.level.dead else TEXT_BODY
+                self.message_label.configure(text=f"▶ {self._last_message}", fg=msg_fg)
+                if not self.message_label.winfo_ismapped():
+                    self.message_label.pack(fill="x", padx=12, pady=5, anchor="nw")
+            else:
+                self.message_label.pack_forget()
+            if press > 0:
+                self.message_label.configure(
+                    text=f"⚙ Stone. + open: {press}/3 presses to fuse",
+                    fg=ACCENT)
+                if not self.message_label.winfo_ismapped():
+                    self.message_label.pack(fill="x", padx=12, pady=5, anchor="nw")
+            help_text = (
+                "W / ↑  = up        A / ← = left\n"
+                "S / ↓  = down      D / → = right\n"
+                "R = restart level   C = center camera\n"
+                "+ / - = zoom in / out\n"
+                "Q = quit\n\n"
+                "Push code blocks onto the circuit line so\n"
+                "the statement compiles.  CLASS PROP = VALUE\n\n"
+                "Big maps use a follow-camera: the view\n"
+                "stays zoomed on your room and scrolls\n"
+                "as you move."
+            )
+            self.help_view.set_text(help_text)
+            # Hints panel shows only when the current level carries hint
+            # text (currently level 8); otherwise the section stays hidden.
+            if not self.game_completed and hint:
+                if not self.hints_label.winfo_ismapped():
+                    self.hints_label.pack(fill="x", padx=12, pady=5, anchor="nw")
+                if not self.hints_view._text.winfo_ismapped():
+                    self.hints_view._text.pack(fill="x", padx=12, pady=4, anchor="nw")
+                self.hints_view.set_text(hint)
+            else:
+                self.hints_label.pack_forget()
+                self.hints_view._text.pack_forget()
 
         self._paint_panel_backdrop()
+        # Keep gliding toward the player/zoom target after this frame.
+        self._request_camera_anim()
 
     def _paint_panel_backdrop(self):
         """Dress the whole side panel in the night art (darkened for text).
@@ -565,6 +679,7 @@ class GUIEngine:
         key = arrow_map.get(key, key)
 
         if key == "q":
+            self._cancel_camera_anim()
             self.window.root.destroy()
             return
         if key == "h":
@@ -582,15 +697,18 @@ class GUIEngine:
             return
         if key in ("plus", "equal", "kp_add"):
             self._zoom = min(CAM_ZOOM_MAX, self._zoom + 0.15)
+            self._nudge_camera_toward_target(0.6)
             self.render_frame(f"Zoom {self._zoom:.2f}x -- rooms closer.")
             return
         if key in ("minus", "kp_subtract"):
             self._zoom = max(CAM_ZOOM_MIN, self._zoom - 0.15)
+            self._nudge_camera_toward_target(0.6)
             self.render_frame(f"Zoom {self._zoom:.2f}x -- see more rooms.")
             return
         if key == "c":
-            self._snap_camera_to_player()
-            self.render_frame("Camera centered on player.")
+            # Let the easing loop glide back to the player (smooth);
+            # restart/next-level still snap instantly.
+            self.render_frame("Camera gliding to player.")
             return
         if key not in ("w", "a", "s", "d"):
             return
@@ -611,8 +729,12 @@ class GUIEngine:
             self.render_frame("Level solved!  New level loaded.")
             return
         if self.level.dead:
+            self._nudge_camera_toward_target(1.0)
             self.render_frame(msg + "  Press R to restart.")
             return
+        # Nudge first so the stepped-into cell is already mostly in view;
+        # the full render below is instant, remaining glide is cheap ticks.
+        self._nudge_camera_toward_target(0.6)
         self.render_frame(msg)
 
     # ── entry point ─────────────────────────────────────────────────
