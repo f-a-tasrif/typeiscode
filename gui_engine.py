@@ -46,32 +46,28 @@ BOARD_PADDING  = 8
 # Only level 8 carries hint text; all other entries are blank and the
 # HINTS section stays hidden on those levels.
 LEVEL_HINTS = [
-    "",
+"",
 
-    "",
+"",
 
-    "",
+"",
 
-    "",
+"",
 
-    "",
+"",
 
-    "",
+"",
 
-    "",
+"",
 
-    "1. There lies hidden bombs,\n"
+"1. There lies hidden bombs,\n"
         "where the player must succumb,\n"
         "discovers a path without turning into crumbs.\n"
     "2. Two meaningful blocks can be fused into one.\n",
 
-    "",
+"",
 
-    "Relocating flag: the visible flag is a mined decoy.\n"
-    "1. Relay: open Door, disarm Trap, set Wall.solid = False.\n"
-    "2. Cross the floor wall; False into Stone rule: vanish.\n"
-    "3. True into Flag rule: Flag.moved = True, flag jumps.\n"
-    "4. Bottom-left portal nook, weave hard mines to the flag.",
+    "",
 ]
 
 
@@ -170,8 +166,12 @@ class GUIEngine:
 
         avail_w = cw - 2 * BOARD_PADDING
         avail_h = ch - 2 * BOARD_PADDING
+        # Shrink the cells so the whole board always fits the canvas.
+        # A fixed minimum (e.g. 12px) overflows small windows on wide
+        # levels -- level 10 has 50 columns, so its edge portals were
+        # clipped off-screen and looked "invisible" after resizing.
         cell = min(avail_w // cols, avail_h // rows)
-        cell = max(12, cell)  # never smaller than 12px (wide levels must fit)
+        cell = max(1, cell)
 
         board_w = cell * cols
         board_h = cell * rows
