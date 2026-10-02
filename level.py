@@ -61,6 +61,16 @@ class Level:
         # Pushing the first two together (either order, orthogonal contact
         # via a push) consumes both and spawns the third at the target cell.
         self.recipes: list = []
+        # -- spatial index (perf) --------------------------------------
+        # block_at()/terrain_at() used to scan the whole dynamic_objects
+        # list per cell: O(cells * objects) per frame (~130k checks on
+        # big maps). These dicts make lookups O(1); rebuilt once per
+        # frame/move instead of once per cell.
+        self._block_map: dict[tuple[int, int], CodeBlock] = {}
+        self._terrain_map: dict[tuple[int, int], GameObject] = {}
+        self._warp_map: dict[tuple[int, int], GameObject] = {}
+        self._bpos_cache: dict | None = None
+        self._index_dirty = True
 
     # -- level construction helpers -----------------------------------
     def add_wall_border(self):
@@ -77,6 +87,7 @@ class Level:
                 if (x, y) not in seen:
                     seen.add((x, y))
                     self.dynamic_objects.append(BorderMine(x, y))
+        self._index_dirty = True
 
     def add_wall(self, x, y):
         self.tiles[(x, y)] = Wall(x, y)
@@ -89,6 +100,36 @@ class Level:
 
     def add_object(self, obj: GameObject):
         self.dynamic_objects.append(obj)
+        self._index_dirty = True
+
+    def _rebuild_index(self):
+        """Rebuild O(1) lookup maps from dynamic_objects. O(N), call once
+        per frame/move, not per cell."""
+        block_map: dict = {}
+        terrain_map: dict = {}
+        warp_map: dict = {}
+        for obj in self.dynamic_objects:
+            pos = (obj.x, obj.y)
+            if isinstance(obj, CodeBlock):
+                if pos not in block_map:
+                    block_map[pos] = obj
+            else:
+                if pos not in terrain_map:
+                    terrain_map[pos] = obj
+                if isinstance(obj, Warp):
+                    warp_map[pos] = obj
+        self._block_map = block_map
+        self._terrain_map = terrain_map
+        self._warp_map = warp_map
+        self._bpos_cache = dict(block_map)
+        self._index_dirty = False
+
+    def _ensure_index(self):
+        # Direct x/y mutation (tests, pushes) bypasses add_object, so
+        # callers that mutate positions must set _index_dirty. As a
+        # safety net, recompile/move paths force a rebuild (see below).
+        if self._index_dirty or self._bpos_cache is None:
+            self._rebuild_index()
 
     def add_circuit(self, circuit: CircuitLine):
         self.circuits.append(circuit)
@@ -99,19 +140,16 @@ class Level:
         w2 = Warp(x2, y2, x1, y1)
         self.dynamic_objects.append(w1)
         self.dynamic_objects.append(w2)
+        self._index_dirty = True
 
     # -- lookups --------------------------------------------------------
     def block_at(self, x, y) -> CodeBlock | None:
-        for obj in self.dynamic_objects:
-            if isinstance(obj, CodeBlock) and obj.x == x and obj.y == y:
-                return obj
-        return None
+        self._ensure_index()
+        return self._block_map.get((x, y))
 
     def terrain_at(self, x, y) -> GameObject | None:
-        for obj in self.dynamic_objects:
-            if not isinstance(obj, CodeBlock) and obj.x == x and obj.y == y:
-                return obj
-        return None
+        self._ensure_index()
+        return self._terrain_map.get((x, y))
 
     def object_at(self, x, y) -> GameObject | None:
         # Block-first ordering so stacked cells resolve to the pushable token.
@@ -123,17 +161,12 @@ class Level:
         return self.terrain_at(x, y)
 
     def warp_at(self, x, y) -> "Warp | None":
-        for obj in self.dynamic_objects:
-            if isinstance(obj, Warp) and obj.x == x and obj.y == y:
-                return obj
-        return None
+        self._ensure_index()
+        return self._warp_map.get((x, y))
 
     def blocks_by_pos(self) -> dict:
-        return {
-            (o.x, o.y): o
-            for o in self.dynamic_objects
-            if isinstance(o, CodeBlock)
-        }
+        self._ensure_index()
+        return self._bpos_cache
 
     def tile_at(self, x, y) -> GameObject:
         return self.tiles.get((x, y), Wall(x, y))
@@ -146,6 +179,9 @@ class Level:
 
     # -- core game loop ---------------------------------------------------
     def recompile_circuits(self):
+        # Force a fresh index: block positions may have been mutated
+        # directly (pushes, tests) since the last rebuild.
+        self._rebuild_index()
         if getattr(self, "rule_mode", "circuit") == "global":
             self._compile_global_rules()
             self._apply_seal_walls()
@@ -222,6 +258,7 @@ class Level:
                         return self._fuse_pair(occ, target)
                     return "Can't push -- something is already there."
                 occ.x, occ.y = bx, by
+                self._index_dirty = True
                 self.player.x, self.player.y = nx, ny
                 warp = self.warp_at(self.player.x, self.player.y)
                 if warp is not None:
@@ -411,6 +448,7 @@ class Level:
                         if o is not blk and o is not other
                     ]
                     self.dynamic_objects.append(_CB(bx, by, crafted[0], crafted[1]))
+                    self._index_dirty = True
                     self.player.x, self.player.y = nx, ny
                     self.moves += 1
                     self.recompile_circuits()
@@ -420,6 +458,7 @@ class Level:
                     return f"Crafted {crafted[1]}!"
                 return "Can't push -- something is already there."
             blk.x, blk.y = bx, by
+            self._index_dirty = True
 
         # 5. Move the player, then recompile with the new board.
         self.player.x, self.player.y = nx, ny
@@ -525,6 +564,7 @@ class Level:
             o for o in self.dynamic_objects
             if o is not pushed and o is not other
         ]
+        self._index_dirty = True
         replaced = False
         for (tx, ty), tile in list(self.tiles.items()):
             if isinstance(tile, Goal) and (tx, ty) != (gx, gy):

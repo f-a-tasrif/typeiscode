@@ -52,7 +52,9 @@ CAM_VIEW_COLS  = 20   # target visible columns when zoomed
 CAM_VIEW_ROWS  = 13   # target visible rows when zoomed
 CAM_MAX_CELL   = 56   # cap for zoomed cell size (px)
 CAM_MIN_CELL   = 8    # floor so tiny windows never divide by zero
-CAM_FRAME_MS   = 50   # animation tick (~20fps: smooth enough, kind to Tk)
+TARGET_FPS     = 60   # game loop target refresh rate
+CAM_FRAME_MS   = 16   # animation tick (~60fps: 1000/60 = 16.7ms)
+RESIZE_DEBOUNCE_MS = 60  # coalesce drag-resize events into one redraw
 CAM_LERP       = 0.35 # per-tick easing toward the player (higher = snappier)
 CAM_EPS        = 0.03 # stop animating below this distance (cells)
 CAM_ZOOM_LERP  = 0.35 # per-tick easing for smooth zoom
@@ -117,6 +119,10 @@ class GUIEngine:
         self._cam_cy: float | None = None
         self._cam_anim: str | None = None
         self._panel_cache: tuple | None = None
+        # perf state: resize debounce, geometry cache, frame timing
+        self._resize_pending: str | None = None
+        self._last_win_size: tuple[int, int] | None = None
+        self._last_render_ms: float = 0.0
 
         # window + layout
         self.window = Window("Type Is Code", 1280, 680, bg=BACKGROUND,
@@ -181,6 +187,22 @@ class GUIEngine:
 
     # ── responsive resize ───────────────────────────────────────────
     def _on_resize(self, w: int, h: int):
+        # Dragging the edge fires dozens of <Configure> events/sec; each
+        # full redraw costs ~one frame, so the queue felt "late". Debounce
+        # into a single redraw after the burst settles.
+        try:
+            if self._resize_pending is not None:
+                self.window.root.after_cancel(self._resize_pending)
+        except Exception:
+            pass
+        try:
+            self._resize_pending = self.window.root.after(
+                RESIZE_DEBOUNCE_MS, self._do_resize)
+        except Exception:
+            self._resize_pending = None
+
+    def _do_resize(self):
+        self._resize_pending = None
         self.render_frame(self._last_message)
 
     # ── follow-camera ─────────────────────────────────────────────
@@ -372,6 +394,8 @@ class GUIEngine:
 
     # ── rendering ───────────────────────────────────────────────────
     def render_frame(self, message: str = "", board_only: bool = False):
+        import time as _time
+        _t0 = _time.perf_counter()
         # Full renders own the message slot; camera ticks pass the
         # stored message back and must not clear it, and they skip all
         # panel work so input stays responsive while gliding.
@@ -380,10 +404,27 @@ class GUIEngine:
         else:
             message = self._last_message
         if not board_only:
-            # settle pending geometry so the canvas reports its current
-            # size (otherwise the board is drawn for the previous size).
-            # Ticks skip this: it forces layout and costs input latency.
-            self.window.root.update_idletasks()
+            # update_idletasks() forces a full layout pass and was the top
+            # input-latency cost (every keypress paid it). The canvas size
+            # only changes when the window does, so skip the flush when the
+            # toplevel size is unchanged since the last frame.
+            # Ticks skip this entirely: it forces layout and costs latency.
+            try:
+                _ww = self.window.root.winfo_width()
+                _wh = self.window.root.winfo_height()
+            except Exception:
+                _ww, _wh = 0, 0
+            if (_ww, _wh) != self._last_win_size:
+                try:
+                    self.window.root.update_idletasks()
+                except Exception:
+                    pass
+                try:
+                    _ww = self.window.root.winfo_width()
+                    _wh = self.window.root.winfo_height()
+                except Exception:
+                    pass
+                self._last_win_size = (_ww, _wh)
         self.canvas.clear()
         raw = self.canvas.raw  # direct tk.Canvas for tile_renderer
 
@@ -705,6 +746,11 @@ class GUIEngine:
         self._paint_panel_backdrop()
         # Keep gliding toward the player/zoom target after this frame.
         self._request_camera_anim()
+        try:
+            import time as _time2
+            self._last_render_ms = (_time2.perf_counter() - _t0) * 1000.0
+        except Exception:
+            pass
 
     def _paint_panel_backdrop(self):
         """Dress the whole side panel in the night art (darkened for text).

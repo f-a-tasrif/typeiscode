@@ -48,6 +48,16 @@ def _check_photo_root():
         _panel_photos.clear()
         _photo_root = cur
 
+
+def _quant_size(size: int) -> int:
+    """Quantize a cell size to even pixels for sprite caches.
+
+    Smooth zoom changes cell size by 1px per tick; without this every
+    tick would LANCZOS/BILINEAR-resize all sprites and thrash the cache.
+    2px steps halve that work with no visible difference.
+    """
+    return max(8, int(round(float(size) / 2.0) * 2))
+
 # ── colour palette ───────────────────────────────────────────────────
 WALL_BASE      = "#3b3f5e"
 WALL_MORTAR    = "#2a2d48"
@@ -310,16 +320,26 @@ def draw_player(canvas: tk.Canvas, x: int, y: int, size: int):
     w = len(PIX[0])
     px = size / w
     py = size / h
+    # Run-length encode each row: one rectangle per horizontal run of the
+    # same color instead of one per pixel (~320 items -> ~60). This is the
+    # single biggest canvas-item saver at 60fps.
     for j, row in enumerate(PIX):
-        for i, ch in enumerate(row):
+        i = 0
+        y1 = y + j * py
+        y2 = y + (j + 1) * py + 0.5
+        while i < w:
+            ch = row[i]
             if ch == "." or ch not in COLORS:
+                i += 1
                 continue
+            k = i + 1
+            while k < w and row[k] == ch:
+                k += 1
             x1 = x + i * px
-            y1 = y + j * py
-            x2 = x + (i + 1) * px + 0.5
-            y2 = y + (j + 1) * py + 0.5
+            x2 = x + k * px + 0.5
             canvas.create_rectangle(x1, y1, x2, y2,
                                     fill=COLORS[ch], outline="")
+            i = k
 
 
 def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int):
@@ -884,15 +904,15 @@ def _load_portal_src():
 def _portal_photo(size: int):
     """PhotoImage of the portal fitted into a `size`px cell (cached)."""
     _check_photo_root()
-    key = max(8, int(size))
+    key = _quant_size(size)
     if key in _portal_photos:
         return _portal_photos[key]
     src = _load_portal_src()
     if src is None:
         return None
-    side = max(8, int(size * 0.92))
+    side = max(8, int(key * 0.92))
     fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
     photo = _PILImageTk.PhotoImage(fit)
     _portal_photos[key] = photo
     return photo
@@ -940,15 +960,15 @@ def _load_boom_src():
 def _boom_photo(size: int):
     """PhotoImage of the bomb fitted into a `size`px cell (cached)."""
     _check_photo_root()
-    key = max(8, int(size))
+    key = _quant_size(size)
     if key in _boom_photos:
         return _boom_photos[key]
     src = _load_boom_src()
     if src is None:
         return None
-    side = max(8, int(size * 0.92))
+    side = max(8, int(key * 0.92))
     fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
     photo = _PILImageTk.PhotoImage(fit)
     _boom_photos[key] = photo
     return photo
@@ -991,15 +1011,15 @@ def _load_laser_src():
 def _laser_photo(size: int):
     """PhotoImage of the laser gate fitted into a `size`px cell (cached)."""
     _check_photo_root()
-    key = max(8, int(size))
+    key = _quant_size(size)
     if key in _laser_photos:
         return _laser_photos[key]
     src = _load_laser_src()
     if src is None:
         return None
-    side = max(8, int(size * 0.92))
+    side = max(8, int(key * 0.92))
     fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
     photo = _PILImageTk.PhotoImage(fit)
     _laser_photos[key] = photo
     return photo
@@ -1087,15 +1107,15 @@ def _load_ash_src():
 def _ash_photo(size: int):
     """PhotoImage of the ash pile fitted into a `size`px cell (cached)."""
     _check_photo_root()
-    key = max(8, int(size))
+    key = _quant_size(size)
     if key in _ash_photos:
         return _ash_photos[key]
     src = _load_ash_src()
     if src is None:
         return None
-    side = max(8, int(size * 0.92))
+    side = max(8, int(key * 0.92))
     fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
     photo = _PILImageTk.PhotoImage(fit)
     _ash_photos[key] = photo
     return photo
@@ -1177,15 +1197,15 @@ def _load_stone_src():
 def _stone_photo(size: int):
     """PhotoImage of the stone pile fitted into a `size`px cell (cached)."""
     _check_photo_root()
-    key = max(8, int(size))
+    key = _quant_size(size)
     if key in _stone_photos:
         return _stone_photos[key]
     src = _load_stone_src()
     if src is None:
         return None
-    side = max(8, int(size * 0.92))
+    side = max(8, int(key * 0.92))
     fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
     photo = _PILImageTk.PhotoImage(fit)
     _stone_photos[key] = photo
     return photo
@@ -1210,15 +1230,15 @@ def _load_door_src():
 def _door_photo(size: int):
     """PhotoImage of the wooden door fitted into a `size`px cell (cached)."""
     _check_photo_root()
-    key = max(8, int(size))
+    key = _quant_size(size)
     if key in _door_photos:
         return _door_photos[key]
     src = _load_door_src()
     if src is None:
         return None
-    side = max(8, int(size * 0.92))
+    side = max(8, int(key * 0.92))
     fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
     photo = _PILImageTk.PhotoImage(fit)
     _door_photos[key] = photo
     return photo
@@ -1257,15 +1277,15 @@ def _load_trap_src():
 def _trap_photo(size: int):
     """PhotoImage of the live trap fitted into a `size`px cell (cached)."""
     _check_photo_root()
-    key = max(8, int(size))
+    key = _quant_size(size)
     if key in _trap_photos:
         return _trap_photos[key]
     src = _load_trap_src()
     if src is None:
         return None
-    side = max(8, int(size))
+    side = max(8, int(key))
     fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
     photo = _PILImageTk.PhotoImage(fit)
     _trap_photos[key] = photo
     return photo
@@ -1290,15 +1310,15 @@ def _load_skel_src():
 def _skel_photo(size: int):
     """PhotoImage of the skeleton fitted into a `size`px cell (cached)."""
     _check_photo_root()
-    key = max(8, int(size))
+    key = _quant_size(size)
     if key in _skel_photos:
         return _skel_photos[key]
     src = _load_skel_src()
     if src is None:
         return None
-    side = max(8, int(size * 0.92))
+    side = max(8, int(key * 0.92))
     fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.LANCZOS)
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
     photo = _PILImageTk.PhotoImage(fit)
     _skel_photos[key] = photo
     return photo
