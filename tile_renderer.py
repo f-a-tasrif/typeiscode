@@ -206,8 +206,13 @@ def _rounded_rect(canvas, x1, y1, x2, y2, r, **kw):
 
 # ── entity drawing functions ────────────────────────────────────────
 
-def draw_wall(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_wall(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Brick-pattern wall with raised 3D bevel."""
+    if fast:
+        # LOD: 1 item instead of ~10 (brick lines + 4-poly bevel).
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill=WALL_BASE, outline=WALL_MORTAR, width=1)
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=WALL_BASE, outline=WALL_MORTAR, width=1)
     # Draw brick rows
@@ -229,8 +234,13 @@ def draw_wall(canvas: tk.Canvas, x: int, y: int, size: int):
     _bevel(canvas, x, y, size, WALL_HI, WALL_SHADOW)
 
 
-def draw_floor(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_floor(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Subtle dark floor tile, recessed for contrast with walls."""
+    if fast:
+        # LOD: 1 item instead of 6 (inner accent + 4-poly bevel).
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill=FLOOR_BASE, outline=FLOOR_LINE, width=1)
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=FLOOR_BASE, outline=FLOOR_LINE, width=1)
     # inner accent line
@@ -242,8 +252,16 @@ def draw_floor(canvas: tk.Canvas, x: int, y: int, size: int):
            depth=max(1, size // 12))
 
 
-def draw_goal(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_goal(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Green flag on a pole, raised plate with 3D rim."""
+    if fast:
+        # LOD: 2 items instead of ~8.
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill=GOAL_GREEN, outline="#3ab85e", width=1)
+        pole_x = x + size // 3
+        canvas.create_line(pole_x, y + size * 0.2, pole_x, y + size * 0.85,
+                           fill=GOAL_POLE, width=max(1, size // 16))
+        return
     # floor background
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1a3020", outline="#2e4a3a", width=1)
@@ -268,7 +286,7 @@ def draw_goal(canvas: tk.Canvas, x: int, y: int, size: int):
                           fill=GOAL_FLAG, outline="#38c85c", width=1)
 
 
-def draw_player(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_player(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Goomba pixel character (from Downloads/goomba.png).
 
     Brown mushroom body with dark outline, white eyes with dark
@@ -276,7 +294,25 @@ def draw_player(canvas: tk.Canvas, x: int, y: int, size: int):
     Drawn as chunky pixels so it reads clearly at any cell size.
     No external assets required.
     """
-    draw_floor(canvas, x, y, size)
+    draw_floor(canvas, x, y, size, fast=fast)
+    if fast:
+        # LOD: 4 items instead of ~60 RLE rects. Reads as the same
+        # character at speed: body, stem, two eyes.
+        m = max(1, size // 8)
+        canvas.create_oval(x + m, y + m, x + size - m, y + size - m,
+                           fill=GOOMBA_BODY, outline=GOOMBA_OUTLINE,
+                           width=max(1, size // 20))
+        cx = x + size // 2
+        canvas.create_rectangle(cx - max(1, size // 10), y + size // 2,
+                                cx + max(1, size // 10), y + size - m,
+                                fill=GOOMBA_STEM, outline="")
+        er = max(1, size // 10)
+        for dx in (-1, 1):
+            ex = cx + dx * int(size * 0.2)
+            ey = y + int(size * 0.38)
+            canvas.create_oval(ex - er, ey - er, ex + er, ey + er,
+                               fill=GOOMBA_EYE, outline="")
+        return
 
     # 16 wide x 20 tall pixel map. '.' = transparent.
     # K=outline black, D=dark brown shade, B=body brown,
@@ -342,9 +378,15 @@ def draw_player(canvas: tk.Canvas, x: int, y: int, size: int):
             i = k
 
 
-def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """A blast cloud and scattered character fragments after the hidden boom fires."""
-    draw_floor(canvas, x, y, size)
+    draw_floor(canvas, x, y, size, fast=fast)
+    if fast:
+        cx, cy = x + size // 2, y + size // 2
+        inner = max(4, size // 4)
+        canvas.create_oval(cx - inner, cy - inner, cx + inner, cy + inner,
+                           fill=EXPLOSION_FIRE, outline=EXPLOSION_CORE)
+        return
     cx, cy = x + size // 2, y + size // 2
     outer = max(7, size // 2 - 2)
     inner = max(4, size // 4)
@@ -377,8 +419,12 @@ def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int):
                               fill=col, outline=FRAGMENT_OUTLINE)
 
 
-def draw_platform_solid(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_platform_solid(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Solid purple bridge with support pillars, raised deck."""
+    if fast:
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill=PLATFORM_SOLID, outline=PLATFORM_PILLAR, width=1)
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1b1f3f", outline="#242850", width=1)
     _bevel(canvas, x, y, size, FLOOR_SHADOW, FLOOR_HI,
@@ -407,8 +453,12 @@ def draw_platform_solid(canvas: tk.Canvas, x: int, y: int, size: int):
                             fill=PLATFORM_PILLAR, outline="")
 
 
-def draw_platform_ghost(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_platform_ghost(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Ghost/non-solid platform — dashed outline of the bridge shape."""
+    if fast:
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill="", outline=PLATFORM_GHOST_DASH, width=1)
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1b1f3f", outline="#242850", width=1)
     m = max(1, size // 8)
@@ -429,12 +479,16 @@ def draw_platform_ghost(canvas: tk.Canvas, x: int, y: int, size: int):
                             width=1, dash=(3, 3))
 
 
-def draw_void(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_void(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Bottomless void pit — the path collapsed into nothing.
 
     Drawn for a Path./Platform cell while Path.solid = False.  Stepping
     onto it drops the character into the void (it vanishes, run over).
     """
+    if fast:
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill=VOID_BG, outline=VOID_RIM, width=1)
+        return
     # darkness swallows the whole cell
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=VOID_BG, outline=VOID_RIM, width=1)
@@ -459,18 +513,25 @@ def draw_void(canvas: tk.Canvas, x: int, y: int, size: int):
                        fill=VOID_CORE, outline=VOID_CORE)
 
 
-def draw_door_closed(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_door_closed(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Closed wooden door from assets/door.jpeg, else procedural
     orange door with keyhole and raised frame."""
+    # Photo first in both modes: fast art must never restyle tiles that
+    # have asset art — the simple rect is only a headless fallback.
     photo = None
     try:
         photo = _door_photo(size)
     except Exception:
         photo = None
     if photo is not None:
-        draw_floor(canvas, x, y, size)
+        draw_floor(canvas, x, y, size, fast=fast)
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
+        return
+    if fast:
+        m = max(2, size // 7)
+        canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
+                                fill=DOOR_CLOSED, outline=DOOR_FRAME, width=1)
         return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1b1f3f", outline="#242850", width=1)
@@ -502,8 +563,12 @@ def draw_door_closed(canvas: tk.Canvas, x: int, y: int, size: int):
            depth=max(1, size // 14))
 
 
-def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Open door — split panels revealing passage (sunken)."""
+    if fast:
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill="#1a2a1a", outline="#2e4a2e", width=1)
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1a2a1a", outline="#2e4a2e", width=1)
     _bevel(canvas, x, y, size, "#0d1a0d", "#3a5a3a",
@@ -526,8 +591,9 @@ def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int):
                             fill="#c89040", outline="#a07030")
 
 
-def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Live trap — digital-rain art from assets/trap.gif, else spikes."""
+    # Photo first in both modes (see draw_door_closed).
     photo = None
     try:
         photo = _trap_photo(size)
@@ -536,6 +602,11 @@ def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int):
     if photo is not None:
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
+        return
+    if fast:
+        m = max(2, size // 6)
+        canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
+                                fill=TRAP_RED, outline="#e05565", width=1)
         return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#2a1015", outline="#4a2025", width=1)
@@ -564,8 +635,12 @@ def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int):
                        font=("Arial", max(8, size // 4), "bold"), anchor="center")
 
 
-def draw_trap_safe(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_trap_safe(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Disarmed trap — grayed out, no spikes."""
+    if fast:
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill="#1b1f2f", outline="#2a2f40", width=1)
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill="#1b1f2f", outline="#2a2f40", width=1)
     m = max(2, size // 6)
@@ -580,7 +655,7 @@ def draw_trap_safe(canvas: tk.Canvas, x: int, y: int, size: int):
 
 
 def draw_code_block(canvas: tk.Canvas, x: int, y: int, size: int,
-                    label: str, kind: str):
+                    label: str, kind: str, fast: bool = False):
     """Rounded-rectangle 'chip' with a label, extruded 3D keycap."""
     kind_colors = {
         "CLASS":  ("#1a4a7a", "#52b0ff"),
@@ -590,6 +665,18 @@ def draw_code_block(canvas: tk.Canvas, x: int, y: int, size: int,
         "NOT":    ("#5a1a3a", "#ff5f8f"),
     }
     bg, border = kind_colors.get(kind, (BLOCK_BG, BLOCK_BORDER))
+    if fast:
+        # LOD: 2 items (body + label) instead of shadow + rounded polys.
+        m = max(1, size // 10)
+        canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
+                                fill=bg, outline=border,
+                                width=max(1, size // 20))
+        cx = x + size // 2
+        cy = y + size // 2
+        font_size = max(7, min(size // 5, 14))
+        canvas.create_text(cx, cy, text=label, fill=BLOCK_TEXT,
+                           font=("Consolas", font_size, "bold"), anchor="center")
+        return
     m = max(1, size // 10)
     r = max(3, size // 6)
     # extrusion shadow underneath for thickness
@@ -610,9 +697,11 @@ def draw_code_block(canvas: tk.Canvas, x: int, y: int, size: int,
                        font=("Consolas", font_size, "bold"), anchor="center")
 
 
-def draw_circuit_slot(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_circuit_slot(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Dashed rounded-rect outline marking a compiler slot."""
-    draw_floor(canvas, x, y, size)
+    draw_floor(canvas, x, y, size, fast=fast)
+    if fast:
+        return
     m = max(2, size // 8)
     canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
                             fill=CIRCUIT_SLOT_BG, outline=CIRCUIT_SLOT_BORDER,
@@ -624,17 +713,22 @@ def draw_circuit_slot(canvas: tk.Canvas, x: int, y: int, size: int):
                        fill=CIRCUIT_SLOT_BORDER, outline=CIRCUIT_SLOT_BORDER)
 
 
-def draw_stone(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_stone(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Solid stone block from assets/stone.jpeg, else grey brickwork."""
+    # Photo first in both modes (see draw_door_closed).
     photo = None
     try:
         photo = _stone_photo(size)
     except Exception:
         photo = None
     if photo is not None:
-        draw_floor(canvas, x, y, size)
+        draw_floor(canvas, x, y, size, fast=fast)
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
+        return
+    if fast:
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill=STONE_WALL, outline=STONE_MORTAR, width=1)
         return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=STONE_WALL, outline=STONE_MORTAR, width=1)
@@ -658,9 +752,11 @@ def draw_stone(canvas: tk.Canvas, x: int, y: int, size: int):
     _bevel(canvas, x, y, size, STONE_FACE_HI, STONE_SIDE)
 
 
-def draw_stone_open(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_stone_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Stone block that is no longer solid — ghost/phantom outline."""
-    draw_floor(canvas, x, y, size)
+    draw_floor(canvas, x, y, size, fast=fast)
+    if fast:
+        return
     m = max(2, size // 6)
     w = max(1, size // 20)
     canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
@@ -673,8 +769,12 @@ def draw_stone_open(canvas: tk.Canvas, x: int, y: int, size: int):
                        fill=STONE_BASE, width=max(1, size // 24), dash=(4, 3))
 
 
-def draw_seal_wall(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_seal_wall(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Sealed wall (active) — purple-striped wall tile like the HTML's 'sl' class."""
+    if fast:
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill=WALL_BASE, outline=SEAL_PURPLE, width=1)
+        return
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=WALL_BASE, outline=WALL_MORTAR, width=1)
     # diagonal purple stripes at 45°, clipped to the cell
@@ -694,14 +794,15 @@ def draw_seal_wall(canvas: tk.Canvas, x: int, y: int, size: int):
     _bevel(canvas, x, y, size, "#a78bfa", "#2a1a5a")
 
 
-def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Hidden portal — blue oval ring from assets/portal.jpeg.
 
     The photo is keyed (near-black -> transparent), autocropped and
     fitted into the cell.  Without Pillow / the asset / a Tk root,
     falls back to procedural indigo rings so tests stay headless-safe.
     """
-    draw_floor(canvas, x, y, size)
+    draw_floor(canvas, x, y, size, fast=fast)
+    # Photo first in both modes (see draw_door_closed).
     photo = None
     try:
         photo = _portal_photo(size)
@@ -710,6 +811,13 @@ def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int):
     if photo is not None:
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
+        return
+    if fast:
+        cx, cy = x + size // 2, y + size // 2
+        m = max(2, size // 8)
+        outer = max(3, size // 2 - m)
+        canvas.create_oval(cx - outer, cy - outer, cx + outer, cy + outer,
+                           fill="", outline=WARP_INDIGO, width=max(1, size // 20))
         return
     cx, cy = x + size // 2, y + size // 2
     m = max(2, size // 8)
@@ -725,13 +833,14 @@ def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int):
                            font=("Arial", max(8, size // 3)), anchor="center")
 
 
-def draw_mine(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_mine(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Visible land mine — pixel bomb from assets/boom.jpeg.
 
     Without Pillow / the asset / a Tk root, falls back to the red
     danger marker so tests stay headless-safe.
     """
-    draw_floor(canvas, x, y, size)
+    draw_floor(canvas, x, y, size, fast=fast)
+    # Photo first in both modes (see draw_door_closed).
     photo = None
     try:
         photo = _boom_photo(size)
@@ -741,7 +850,12 @@ def draw_mine(canvas: tk.Canvas, x: int, y: int, size: int):
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
         return
-    draw_trap_lethal(canvas, x, y, size)
+    if fast:
+        m = max(2, size // 6)
+        canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
+                                fill=TRAP_RED, outline="#e05565", width=1)
+        return
+    draw_trap_lethal(canvas, x, y, size, fast=fast)
 
 
 # ── full-window background: ONE image for the whole window ───────────
@@ -1026,7 +1140,7 @@ def _laser_photo(size: int):
 
 
 def draw_laser(canvas: tk.Canvas, x: int, y: int, size: int,
-               active: bool = True):
+               active: bool = True, fast: bool = False):
     """Laser gate — red beams between stone emitters (assets/laser.png).
 
     Mirrors the reference art: grey emitter caps top/bottom with four
@@ -1034,9 +1148,10 @@ def draw_laser(canvas: tk.Canvas, x: int, y: int, size: int,
     back to procedural beams so tests stay headless-safe.  When
     `active` is False the beams are off and only the floor shows.
     """
-    draw_floor(canvas, x, y, size)
+    draw_floor(canvas, x, y, size, fast=fast)
     if not active:
         return
+    # Photo first in both modes (see draw_door_closed).
     photo = None
     try:
         photo = _laser_photo(size)
@@ -1045,6 +1160,11 @@ def draw_laser(canvas: tk.Canvas, x: int, y: int, size: int,
     if photo is not None:
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
+        return
+    if fast:
+        m = max(2, size // 10)
+        canvas.create_rectangle(x + m, y + 1, x + size - m, y + size - 1,
+                                fill="#e34b3e", outline="")
         return
     # Procedural fallback: grey emitter bars + 4 red beams w/ white core.
     m = max(2, size // 10)
@@ -1121,14 +1241,15 @@ def _ash_photo(size: int):
     return photo
 
 
-def draw_ash(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_ash(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Ash pile left when the laser vaporises the character.
 
     Grey mound from assets/ash.jpeg on the floor.  Without Pillow / the
     asset / a Tk root, falls back to a procedural mound so tests stay
     headless-safe.
     """
-    draw_floor(canvas, x, y, size)
+    draw_floor(canvas, x, y, size, fast=fast)
+    # Photo first in both modes (see draw_door_closed).
     photo = None
     try:
         photo = _ash_photo(size)
@@ -1137,6 +1258,14 @@ def draw_ash(canvas: tk.Canvas, x: int, y: int, size: int):
     if photo is not None:
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
+        return
+    if fast:
+        cx = x + size // 2
+        base_y = y + size - max(2, size // 6)
+        half = max(3, size // 2 - max(2, size // 6))
+        canvas.create_rectangle(cx - half, base_y - max(1, size // 12),
+                                cx + half, base_y,
+                                fill="#4a4a52", outline="")
         return
     # Procedural fallback: dark grey pixel mound with scattered crumbs.
     cx = x + size // 2
@@ -1324,14 +1453,15 @@ def _skel_photo(size: int):
     return photo
 
 
-def draw_skeleton(canvas: tk.Canvas, x: int, y: int, size: int):
+def draw_skeleton(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Skeleton left when a live trap kills the character.
 
     Pixel skull from assets/skeleton.png on the floor.  Without Pillow /
     the asset / a Tk root, falls back to a procedural skull so tests stay
     headless-safe.
     """
-    draw_floor(canvas, x, y, size)
+    draw_floor(canvas, x, y, size, fast=fast)
+    # Photo first in both modes (see draw_door_closed).
     photo = None
     try:
         photo = _skel_photo(size)
@@ -1340,6 +1470,12 @@ def draw_skeleton(canvas: tk.Canvas, x: int, y: int, size: int):
     if photo is not None:
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
+        return
+    if fast:
+        cx, cy = x + size // 2, y + size // 2
+        r = max(4, size // 2 - max(2, size // 8))
+        canvas.create_oval(cx - r, cy - r, cx + r, cy + int(r * 0.7),
+                           fill="#d8d8dc", outline="#0a0a0a")
         return
     # Procedural fallback: pale skull oval, dark eye sockets, jaw lines.
     cx, cy = x + size // 2, y + size // 2
