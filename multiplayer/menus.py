@@ -243,6 +243,12 @@ class MenuApp:
                     "end",
                     f"{info.host_name}  [{info.gamemode}]  "
                     f"{info.players}p  {info.address}:{info.port}")
+            if self.discovered:
+                # Pre-select the first lobby: Join then uses it even if the
+                # user never clicks the row (the previous silent fallback to
+                # the manual 127.0.0.1 field caused bogus refused errors).
+                listbox.selection_set(0)
+                listbox.see(0)
         refresh_btn = self._btn(f, "↻  Refresh", refresh)
         refresh_btn.pack(fill="x", pady=(0, 8))
 
@@ -261,10 +267,29 @@ class MenuApp:
 
         def _do_join():
             sel = listbox.curselection()
-            addr, port = ip_var.get().strip(), port_var.get().strip()
             if sel and self.discovered and sel[0] < len(self.discovered):
                 info = self.discovered[sel[0]]
                 addr, port = info.address, str(info.port)
+            elif len(self.discovered) == 1:
+                # One lobby on the LAN and nothing selected: use it.
+                info = self.discovered[0]
+                addr, port = info.address, str(info.port)
+            elif self.discovered:
+                self.messagebox.showerror(
+                    "Join", "Select a lobby from the LAN list first, "
+                             "or type the host IP manually below.")
+                return
+            else:
+                addr, port = ip_var.get().strip(), port_var.get().strip()
+                if addr in ("127.0.0.1", "localhost"):
+                    confirm = self.messagebox.askokcancel(
+                        "Join",
+                        "No lobby selected and Host IP is still 127.0.0.1 "
+                        "(this machine only).\n\nTo join another PC, type the "
+                        "HOST IP shown on the host's lobby screen.\n\nJoin "
+                        "127.0.0.1 anyway?")
+                    if not confirm:
+                        return
             try:
                 port_i = int(port)
             except ValueError:
