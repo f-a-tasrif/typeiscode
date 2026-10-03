@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from .protocol import (
     DEFAULT_LOBBY_PORT,
-    DISCOVERY_PORT,
     GAMEMODES,
     gamemode_label,
 )
@@ -214,7 +213,9 @@ class MenuApp:
         fixed = gamemode if gamemode in (FASTER_MODE, DUEL_MODE, TOGETHER_MODE) else None
         title_sub = (f"{self._lan_title(fixed)} — join a lobby on the same network."
                      if fixed else "Join a lobby on the same network as the host.")
-        self._title(f, "JOIN LOBBY", title_sub)
+        self._title(f, "JOIN LOBBY", title_sub + "\nNo lobby listed? Type the HOST IP shown on the "
+                    "host's lobby screen. Both PCs need the same Wi-Fi, and the "
+                    "host must allow Python through its firewall.")
         self.tk.Label(f, text="Your name:", font=("Consolas", 11),
                       fg=TEXT, bg=BG).pack(anchor="w")
         name_var = self.tk.StringVar(value="Player")
@@ -318,8 +319,9 @@ class MenuApp:
         if is_host:
             info_name = host.host_name
             info_mode = f"{host.gamemode} — {gamemode_label(host.gamemode)}"
-            info_addr = f"Lobby {host.lobby_id}  |  port {host.bound_port}  |  "
-            info_addr += f"share your LAN IP, discovery port {DISCOVERY_PORT}"
+            from .lobby import lan_ips
+            info_addr = (f"Lobby {host.lobby_id}  |  port {host.bound_port}\n"
+                         f"HOST IP (guests type this): {', '.join(lan_ips())}")
         else:
             info_name = client.you
             info_mode = f"{client.gamemode}"

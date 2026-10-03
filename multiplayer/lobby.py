@@ -45,6 +45,64 @@ class LobbyInfo:
     players: int = 0
 
 
+def _local_ipv4s() -> list[str]:
+    """Non-loopback IPv4 addresses of this machine (best effort)."""
+    found: list[str] = []
+    try:
+        for _target in ("8.8.8.8", "10.0.0.1", "192.168.1.1", "172.16.0.1"):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.settimeout(0.5)
+                # UDP connect() sends nothing; it just reveals the source IP
+                # the OS would route with toward that destination.
+                s.connect((_target, 80))
+                ip = s.getsockname()[0]
+                if ip and not ip.startswith("127.") and ip not in found:
+                    found.append(ip)
+            except Exception:
+                pass
+            finally:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    if not found:
+        try:
+            for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+                if ip and not ip.startswith("127.") and ip not in found:
+                    found.append(ip)
+        except Exception:
+            pass
+    return found
+
+
+def lan_ips() -> list[str]:
+    """Display-ready LAN IPs for 'type this on the guest' instructions."""
+    ips = _local_ipv4s()
+    return ips if ips else ["<unknown — same Wi-Fi as the host>"]
+
+
+def broadcast_targets() -> list[str]:
+    """UDP destinations covering global + per-interface directed broadcast.
+
+    255.255.255.255 is filtered on many Windows setups / routers, so also
+    hit x.x.x.255 for every local interface (/24 covers home LANs) plus
+    loopback (same-machine testing).
+    """
+    targets = ["255.255.255.255"]
+    for ip in _local_ipv4s():
+        try:
+            base = ".".join(ip.split(".")[:3]) + ".255"
+            if base not in targets:
+                targets.append(base)
+        except Exception:
+            pass
+    targets.append("127.0.0.1")
+    return targets
+
+
 def _recv_line(f) -> dict | None:
     import json
     line = f.readline()
@@ -304,7 +362,7 @@ class LobbyHost:
                                      self.gamemode, self.bound_port, n)
                 import json as _json
                 raw = _json.dumps(beacon).encode("utf-8")
-                for target in ("255.255.255.255", "127.0.0.1"):
+                for target in broadcast_targets():
                     try:
                         sock.sendto(raw, (target, DISCOVERY_PORT))
                     except Exception:
@@ -379,7 +437,7 @@ class LobbyClient:
             return []
         import json as _json
         probe = _json.dumps({"magic": GAME_MAGIC, "type": "probe"}).encode()
-        for target in ("255.255.255.255", "127.0.0.1"):
+        for target in broadcast_targets():
             try:
                 sock.sendto(probe, (target, DISCOVERY_PORT))
             except Exception:
@@ -412,7 +470,20 @@ class LobbyClient:
 
     def connect(self, address: str, port: int,
                 timeout: float = 5.0) -> dict:
-        sock = socket.create_connection((address, port), timeout=timeout)
+        try:
+            sock = socket.create_connection((address, port), timeout=timeout)
+        except (socket.timeout, TimeoutError):
+            raise ConnectionError(
+                f"timed out reaching {address}:{port} — same Wi-Fi as the host? "
+                "If yes, the host's firewall is likely blocking Python: allow "
+                "it when Windows asks, or add an inbound rule for TCP "
+                f"port {port}.")
+        except OSError as e:
+            raise ConnectionError(
+                f"could not reach {address}:{port} ({e}) — check the host IP "
+                "shown on the host's lobby screen, same Wi-Fi, and that the "
+                "host lobby is still open (Windows firewall may be blocking "
+                "Python).")
         sock.settimeout(10.0)
         sock.sendall(encode_msg({"type": "hello", "name": self.player_name}))
         f = sock.makefile("r", encoding="utf-8")

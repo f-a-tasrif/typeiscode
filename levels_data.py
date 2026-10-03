@@ -240,14 +240,14 @@ def build_level1() -> Level:
 def build_level4() -> Level:
     
     e = MAPS[3]
-    return _build_from_map("4",
+    return _build_from_map("2",
                            e["rows"], e["start"], e["tokens"])
 
 
 def build_level6() -> Level:
     
     e = MAPS[2]
-    lvl = _build_from_map("6",
+    lvl = _build_from_map("3",
                           e["rows"], e["start"], e["tokens"])
     # The first room's spare True is a False here (a decoy next to the
     # Path slot; the solution still feeds the rule with NOT).
@@ -258,7 +258,7 @@ def build_level6() -> Level:
 def build_level7() -> Level:
     
     e = MAPS[4]
-    lvl = _build_from_map("7",
+    lvl = _build_from_map("4",
                           e["rows"], e["start"], e["tokens"])
     _flip_value_block(lvl, e, "False")
     return lvl
@@ -267,7 +267,7 @@ def build_level7() -> Level:
 def build_level8() -> Level:
     
     W, H = 28, 12
-    lvl = Level("13 - If one path closes, another opens. ", W, H, DEFAULT_REGISTRY)
+    lvl = Level("10 - If one path closes, another opens. ", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
     lvl.set_player(1, 10)
     lvl.set_goal(26, 10)
@@ -329,7 +329,7 @@ def build_level8() -> Level:
 
 def build_level9() -> Level:
     e = MAPS[5]
-    lvl = _build_from_map("8 - Vault cathedral", e["rows"], e["start"], e["tokens"],
+    lvl = _build_from_map("5 - Vault cathedral", e["rows"], e["start"], e["tokens"],
                           stone_mode=True)
     for w in e.get("warp", []):
         lvl.add_warp_pair(w[1], w[0], w[3], w[2])
@@ -338,7 +338,7 @@ def build_level9() -> Level:
 
 def build_level10() -> Level:
     e = MAPS[6]
-    lvl = _build_from_map("9 - The Relocating Flag", e["rows"], e["start"], e["tokens"],
+    lvl = _build_from_map("6 - The Relocating Flag", e["rows"], e["start"], e["tokens"],
                           stone_mode=True)
     for w in e.get("warp", []):
         lvl.add_warp_pair(w[1], w[0], w[3], w[2])
@@ -354,7 +354,7 @@ def build_level10() -> Level:
 
 def build_level11() -> Level:
     e = MAPS[7]
-    return _build_from_map("10 - The Forge Citadel", e["rows"], e["start"],
+    return _build_from_map("7 - The Forge Citadel", e["rows"], e["start"],
                            e["tokens"], warp=e.get("warp"),
                            stone_mode=True, rec=e.get("rec"),
                            f2=e.get("f2"), border_mines=True)
@@ -362,14 +362,14 @@ def build_level11() -> Level:
 
 def build_level12() -> Level:
     e = MAPS[8]
-    return _build_from_map("11 - Nested Vaults & Timing Window", e["rows"],
+    return _build_from_map("8 - Nested Vaults & Timing Window", e["rows"],
                            e["start"], e["tokens"], warp=e.get("warp"),
                            stone_mode=True, border_mines=True, swap_sz=True)
 
 
 def build_level13() -> Level:
     e = MAPS[9]
-    return _build_from_map("12 - The Cascade Vaults Undercroft", e["rows"],
+    return _build_from_map("9 - The Cascade Vaults Undercroft", e["rows"],
                            e["start"], e["tokens"], warp=e.get("warp"),
                            stone_mode=True, border_mines=True,
                            beacon2=e.get("f2"))
