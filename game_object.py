@@ -325,15 +325,38 @@ class Seal6Wall(SealWall):
 class LeverPedestal(GameObject):
     """Lever base tile (Map17 V/U/N/K): always solid, like the HTML's LEV.
 
-    While ``<LeverN>.active`` becomes True the lever fires once and shoves
-    the token directly below it one cell down (see Level._fire_levers).
+    Reversible: while ``<LeverN>.active`` is True the lever fires once and
+    shoves the token directly below it one cell down, leaving a single
+    LeverWall behind at the vacated cell (see Level._fire_levers). When
+    active flips back to False the wall is removed, the shoved token is
+    pulled back to its origin, and the handle flips back up.
     """
 
-    GLYPH = "LEVR"
+    GLYPH_UP = "LEVU"
+    GLYPH_DOWN = "LEVD"
 
     def __init__(self, x, y, lever_name: str = "Lever"):
         super().__init__(x, y, movable=False)
         self.lever_name = lever_name
+
+    def is_blocking(self) -> bool:
+        return True
+
+    def is_active(self) -> bool:
+        return bool(PropertyRegistry.get(self.lever_name, "active", False))
+
+    def glyph(self) -> str:
+        return self.GLYPH_DOWN if self.is_active() else self.GLYPH_UP
+
+
+class LeverWall(GameObject):
+    """Single wall left behind at a fired lever's vacated origin cell.
+
+    Always solid (independent of Wall.solid) so the sealed hole reads as
+    a real wall. Removed again when the lever deactivates.
+    """
+
+    GLYPH = "WALL"
 
     def is_blocking(self) -> bool:
         return True

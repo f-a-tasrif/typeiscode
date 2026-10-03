@@ -45,6 +45,7 @@ def _check_photo_root():
         _door_photos.clear()
         _trap_photos.clear()
         _skel_photos.clear()
+        _lever_photos.clear()
         _panel_photos.clear()
         _photo_root = cur
 
@@ -1451,6 +1452,103 @@ def _skel_photo(size: int):
     photo = _PILImageTk.PhotoImage(fit)
     _skel_photos[key] = photo
     return photo
+
+
+# ── lever photo support (assets/lever.png, white background) ──
+LEVER_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "assets", "lever.png")
+_lever_src = None          # cached RGBA PIL image, or False when unavailable
+_lever_photos: dict[tuple, object] = {}  # (size, active) -> PhotoImage
+
+
+def _load_lever_src():
+    """Load the lever art keyed to RGBA (cached, incl. the miss)."""
+    global _lever_src
+    if _lever_src is not None:
+        return _lever_src or None
+    _lever_src = _white_keyed_src(LEVER_IMAGE) or False
+    return _lever_src or None
+
+
+def _lever_photo(size: int, active: bool = False):
+    """PhotoImage of the lever fitted into a `size`px cell (cached).
+
+    Inactive (handle up) uses the art as-is. Active (handle down) uses a
+    vertically flipped copy so the handle visibly drops.
+    """
+    _check_photo_root()
+    key = (_quant_size(size), bool(active))
+    if key in _lever_photos:
+        return _lever_photos[key]
+    src = _load_lever_src()
+    if src is None:
+        return None
+    side = max(8, int(key[0] * 0.92))
+    fit = src.copy()
+    if active:
+        try:
+            fit = fit.transpose(_PILImage.FLIP_TOP_BOTTOM)
+        except Exception:
+            pass
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
+    photo = _PILImageTk.PhotoImage(fit)
+    _lever_photos[key] = photo
+    return photo
+
+
+def draw_lever(canvas: tk.Canvas, x: int, y: int, size: int,
+               active: bool = False, fast: bool = False):
+    """Lever pedestal from assets/lever.png, else procedural.
+
+    Inactive handle points up, active handle points down.
+    """
+    draw_floor(canvas, x, y, size, fast=fast)
+    photo = None
+    try:
+        photo = _lever_photo(size, active=active)
+    except Exception:
+        photo = None
+    if photo is not None:
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
+    if fast:
+        m = max(2, size // 6)
+        canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
+                                fill="#5a5e78", outline="#383b52", width=1)
+        return
+    # Procedural fallback: grey base + orange handle up/down.
+    cx = x + size // 2
+    base_y0 = y + int(size * 0.62)
+    base_y1 = y + size - max(2, size // 10)
+    m = max(2, size // 6)
+    canvas.create_rectangle(x + m, base_y0, x + size - m, base_y1,
+                            fill="#5a5e78", outline="#0a0a0a",
+                            width=max(1, size // 20))
+    canvas.create_rectangle(x + m, base_y0, x + size - m, base_y0 + max(2, size // 12),
+                            fill="#9aa0bd", outline="")
+    # rod
+    rod_w = max(2, size // 12)
+    if not active:
+        # handle up
+        canvas.create_rectangle(cx - rod_w // 2, y + max(2, size // 8),
+                                cx + rod_w // 2 + 1, base_y0,
+                                fill="#c0c0c0", outline="#0a0a0a")
+        hw, hh = max(4, size // 4), max(6, size // 3)
+        canvas.create_rectangle(cx - hw // 2, y + max(1, size // 12),
+                                cx + hw // 2, y + max(1, size // 12) + hh,
+                                fill="#d96b1a", outline="#0a0a0a",
+                                width=max(1, size // 24))
+    else:
+        # handle down (pulled toward the base, angled right)
+        canvas.create_line(cx, base_y0 - max(1, size // 8),
+                           cx + int(size * 0.28), base_y0,
+                           fill="#c0c0c0", width=rod_w)
+        hr = max(3, size // 6)
+        hx, hy = cx + int(size * 0.28), base_y0 - max(1, size // 12)
+        canvas.create_oval(hx - hr, hy - hr, hx + hr, hy + hr,
+                           fill="#d96b1a", outline="#0a0a0a",
+                           width=max(1, size // 24))
 
 
 def draw_skeleton(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):

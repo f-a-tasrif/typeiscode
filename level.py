@@ -10,7 +10,7 @@ cell beyond it is free); if a Platform/Door/Trap is in the way its
 """
 
 from __future__ import annotations
-from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine, Warp, SealWall, Seal2Wall, Seal3Wall, Seal4Wall, Seal5Wall, Seal6Wall, LeverPedestal, LatchDoor, LaserDoor, HardMine
+from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine, Warp, SealWall, Seal2Wall, Seal3Wall, Seal4Wall, Seal5Wall, Seal6Wall, LeverPedestal, LeverWall, LatchDoor, LaserDoor, HardMine
 from blocks import CodeBlock, CircuitLine, is_merge_pair
 from registry import PropertyRegistry
 
@@ -60,9 +60,13 @@ class Level:
         # Beacon finish (map17): while Beacon.lit is True the win cell is
         # here, inside an isolated chamber reachable only by portal.
         self.beacon2: tuple[int, int] | None = None
-        # Lever pedestals (x, y, lever_name) + one-shot fired flags.
+        # Lever pedestals (x, y, lever_name) + reversible fired flags.
+        # lever_fired[lname] True while the lever holds its shove + wall.
+        # lever_moved[lname] tracks the shoved CodeBlock (or None) plus
+        # origin/dest so deactivation can pull it back.
         self.levers: list[tuple[int, int, str]] = []
         self.lever_fired: dict[str, bool] = {}
+        self.lever_moved: dict[str, tuple] = {}
         # Crafting recipes: [((kind,val),(kind,val),(kind,val)), ...]
         # Pushing the first two together (either order, orthogonal contact
         # via a push) consumes both and spawns the third at the target cell.
@@ -543,50 +547,80 @@ class Level:
             return "You reached the beacon flag! Level complete."
         return None
 
-    def _fire_levers(self) -> str:
-        """One-shot lever shoves (Map17 V/U/N/K).
+    def _dest_free(self, dx: int, dy: int) -> bool:
+        if not (0 <= dx < self.width and 0 <= dy < self.height):
+            return False
+        dest_tile = self.tile_at(dx, dy)
+        if isinstance(dest_tile, Wall) and dest_tile.is_blocking():
+            return False
+        dest_terr = self.terrain_at(dx, dy)
+        if isinstance(dest_terr, SealWall) and dest_terr.is_blocking():
+            return False
+        if dest_terr is not None and dest_terr.is_blocking():
+            return False
+        if self.warp_at(dx, dy) is not None:
+            return False
+        if isinstance(self.terrain_at(dx, dy), (HiddenBoom, BorderMine, HardMine)):
+            return False
+        if self.block_at(dx, dy) is not None:
+            return False
+        return True
 
-        Mirrors the HTML step() lever loop: for every lever pedestal
-        whose <LeverN>.active is True and which has not fired yet, mark
-        it fired and shove the token directly below it one cell down when
-        the destination is free (no block, no blocking terrain/tile, no
-        portal, no mine). Returns a status message when something fired.
+    def _fire_levers(self) -> str:
+        """Reversible lever shoves (Map17 V/U/N/K).
+
+        While <LeverN>.active is True the lever fires once: the token
+        directly below it is shoved one cell down (when the destination
+        is free) and a single LeverWall appears at the vacated origin
+        cell. When active flips back to False the wall is removed, the
+        shoved token is pulled back to its origin, and the handle flips
+        back up. Returns a status message when something fired/released.
         """
         if not getattr(self, "levers", None):
             return ""
-        fired_msgs = []
+        msgs = []
         for lx, ly, lname in list(self.levers):
-            if self.lever_fired.get(lname):
-                continue
-            if not bool(PropertyRegistry.get(lname, "active", False)):
-                continue
-            self.lever_fired[lname] = True
-            blk = self.block_at(lx, ly + 1)
-            if blk is None:
-                continue
+            active = bool(PropertyRegistry.get(lname, "active", False))
+            fired = bool(self.lever_fired.get(lname))
+            ox, oy = lx, ly + 1
             dx, dy = lx, ly + 2
-            if not (0 <= dx < self.width and 0 <= dy < self.height):
-                continue
-            dest_tile = self.tile_at(dx, dy)
-            if isinstance(dest_tile, Wall) and dest_tile.is_blocking():
-                continue
-            dest_terr = self.terrain_at(dx, dy)
-            if isinstance(dest_terr, SealWall) and dest_terr.is_blocking():
-                continue
-            if dest_terr is not None and dest_terr.is_blocking():
-                continue
-            if self.warp_at(dx, dy) is not None:
-                continue
-            if isinstance(self.terrain_at(dx, dy), (HiddenBoom, BorderMine, HardMine)):
-                continue
-            if self.block_at(dx, dy) is not None:
-                continue
-            blk.x, blk.y = dx, dy
-            self._index_dirty = True
-            fired_msgs.append(lname)
-        if fired_msgs:
+            if active and not fired:
+                blk = self.block_at(ox, oy)
+                if blk is not None and not self._dest_free(dx, dy):
+                    continue
+                moved = None
+                if blk is not None:
+                    blk.x, blk.y = dx, dy
+                    moved = blk
+                    self._index_dirty = True
+                if self.terrain_at(ox, oy) is None:
+                    self.dynamic_objects.append(LeverWall(ox, oy))
+                    self._index_dirty = True
+                self.lever_fired[lname] = True
+                self.lever_moved[lname] = (moved, (ox, oy), (dx, dy))
+                msgs.append(f"{lname} pulled down")
+            elif not active and fired:
+                self.dynamic_objects = [
+                    o for o in self.dynamic_objects
+                    if not (isinstance(o, LeverWall) and (o.x, o.y) == (ox, oy))
+                ]
+                self._index_dirty = True
+                rec = self.lever_moved.pop(lname, None)
+                if rec is not None:
+                    blk, origin, dest = rec
+                    if blk is not None and (blk.x, blk.y) == dest:
+                        if self.block_at(*origin) is None:
+                            blk.x, blk.y = origin
+                            self._index_dirty = True
+                self.lever_fired[lname] = False
+                msgs.append(f"{lname} released")
+        if msgs:
+            self._ensure_index()
             self.recompile_circuits()
-            return f"Lever(s) fired: {', '.join(fired_msgs)} shoved its token down."
+            fired = [m for m in msgs if "pulled" in m]
+            if fired:
+                return f"Lever(s) fired: {', '.join(fired)} shoved its token down."
+            return "Lever(s) released: wall removed, token restored."
         return ""
 
     def _check_goal_win(self, tile: GameObject) -> str | None:
@@ -733,4 +767,9 @@ class Level:
         self.player_invisible = False
         self.fusion_press_count = 0
         self.lever_fired = {}
+        self.lever_moved = {}
+        self.dynamic_objects = [
+            o for o in self.dynamic_objects if not isinstance(o, LeverWall)
+        ]
+        self._index_dirty = True
         self.recompile_circuits()

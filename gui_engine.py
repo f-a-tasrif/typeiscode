@@ -23,7 +23,7 @@ from tile_renderer import (
     draw_skeleton,
     draw_code_block,
     draw_stone,
-    draw_laser,
+    draw_laser, draw_lever,
     draw_seal_wall, draw_warp, draw_mine,
     get_canvas_photo, get_panel_photo, get_panel_slice,
 )
@@ -81,10 +81,7 @@ LEVEL_HINTS = [
 
 "",
 
-"1. There lies hidden bombs,\n"
-        "where the player must succumb,\n"
-        "discovers a path without turning into crumbs.\n"
-    "2. Two meaningful blocks can be fused into one.\n",
+"",
 
 "",
 
@@ -92,15 +89,21 @@ LEVEL_HINTS = [
 
     "",
 
-"",
+"The shadows fall across the night,\n"
+    "And wrap the weary in their might,\n"
+    "Yet if beacon is lit a new hope of escape comes shining bright,\n"
+    "To guide our freedom through the dark and out of sight.\n",
 
-"",
+"1. There lies hidden bombs,\n"
+        "where the player must succumb,\n"
+        "discovers a path without turning into crumbs.\n"
+    "2. Two meaningful blocks can be fused into one.\n",
 ]
 
 
 HELP_PANEL_TEXT = (
-    "WASD / arrows move, R restart, C center camera,\n"
-    "+/- zoom, 0/F fit map, Q quit.\n\n"
+    "WASD / arrows to move,\n R restart,\n C center camera,\n"
+    "+/- zoom in & zoom out,\n 0/F view full map,\n Q quit.\n\n"
     "Push code blocks onto the circuit line so\n"
     "the statement compiles.  CLASS PROP = VALUE\n\n"
     "Big maps use a follow-camera: the view\n"
@@ -447,7 +450,12 @@ class GUIEngine:
             # keeps a P-toggles-warps keypress to those cells alone.
             _w = bool(getattr(self, "_show_warps", True)) \
                 if terr.__class__.__name__ == "Warp" else None
-            parts.append((terr.__class__.__name__, _b, _l, _v, _w))
+            _a_fn = getattr(terr, "is_active", None)
+            try:
+                _a = _a_fn() if callable(_a_fn) else None
+            except Exception:
+                _a = None
+            parts.append((terr.__class__.__name__, _b, _l, _v, _w, _a))
         blk = self.level.block_at(gx, gy)
         parts.append((blk.kind, blk.value) if blk is not None else None)
         p = getattr(self.level, "player", None)
@@ -659,7 +667,10 @@ class GUIEngine:
                         else:
                             draw_floor(raw, px, py, cell, fast=fast)
                     elif tcls == "LeverPedestal":
-                        draw_stone(raw, px, py, cell, fast=fast)
+                        _active = bool(terr.is_active()) if hasattr(terr, "is_active") else False
+                        draw_lever(raw, px, py, cell, active=_active, fast=fast)
+                    elif tcls == "LeverWall":
+                        draw_wall(raw, px, py, cell, fast=fast)
                     elif tcls == "LatchDoor":
                         if terr.is_blocking():
                             draw_door_closed(raw, px, py, cell, fast=fast)
@@ -783,6 +794,23 @@ class GUIEngine:
                                 draw_seal_wall(raw, px, py, cell, fast=fast)
                             else:
                                 draw_floor(raw, px, py, cell, fast=fast)
+                        elif cls in ("Seal2Wall", "Seal3Wall", "Seal4Wall", "Seal5Wall", "Seal6Wall"):
+                            if occ.is_blocking():
+                                draw_seal_wall(raw, px, py, cell, fast=fast)
+                            else:
+                                draw_floor(raw, px, py, cell, fast=fast)
+                        elif cls == "LeverPedestal":
+                            _active = bool(occ.is_active()) if hasattr(occ, "is_active") else False
+                            draw_lever(raw, px, py, cell, active=_active, fast=fast)
+                        elif cls == "LeverWall":
+                            draw_wall(raw, px, py, cell, fast=fast)
+                        elif cls == "LatchDoor":
+                            if occ.is_blocking():
+                                draw_door_closed(raw, px, py, cell, fast=fast)
+                            else:
+                                draw_door_open(raw, px, py, cell, fast=fast)
+                        elif cls == "LaserDoor":
+                            draw_laser(raw, px, py, cell, active=bool(occ.is_blocking()), fast=fast)
                         elif cls == "Warp":
                             # Portals are visible by default (P toggles reveal/hide).
                             if getattr(self, "_show_warps", True):
