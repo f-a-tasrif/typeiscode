@@ -30,6 +30,12 @@ def parse_args(argv=None):
         action="store_true",
         help="Skip the home menu and jump straight into single-player.",
     )
+    parser.add_argument(
+        "--renderer",
+        choices=("tk", "panda"),
+        default="tk",
+        help="2D Tkinter view (default) or the Phase-1 Panda3D graybox.",
+    )
     return parser.parse_args(argv)
 
 
@@ -59,6 +65,15 @@ def main(argv=None):
     start_index = args.level - 1
 
     def launch_solo():
+        if args.renderer == "panda":
+            try:
+                from panda_app import PandaView
+            except ImportError as exc:
+                print(f"3D renderer unavailable ({exc}); "
+                      f"install it with: pip install panda3d")
+                sys.exit(3)
+            PandaView(start_index=start_index).run()
+            return
         if GUIEngine is not None:
             try:
                 GUIEngine(start_index=start_index).run()

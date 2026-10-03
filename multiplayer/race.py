@@ -2,7 +2,7 @@
 
 Format: every connected player races the full single-player roster
 solo on their own machine.  Winner = most levels solved when the
-15-minute timer expires.  Ties break on fewest restarts, then fewest
+10-minute timer expires.  Ties break on fewest restarts, then fewest
 total steps.  Score mirrors that order so the panel can show one number
 plus the breakdown.
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-RACE_DURATION_S = 15 * 60  # 15 minutes
+RACE_DURATION_S = 10 * 60  # 10 minutes
 SCORE_PER_LEVEL = 10000
 SCORE_PER_RESTART = -100
 SCORE_PER_STEP = -1

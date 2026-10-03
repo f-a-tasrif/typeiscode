@@ -11,8 +11,8 @@ from multiplayer.race import (  # noqa: E402
 from multiplayer.lobby import LobbyHost, LobbyClient  # noqa: E402
 
 
-def test_duration_is_15_minutes():
-    assert RACE_DURATION_S == 900
+def test_duration_is_10_minutes():
+    assert RACE_DURATION_S == 600
 
 
 def test_rank_levels_then_restarts_then_steps():
@@ -34,7 +34,7 @@ def test_score_mirrors_rank_order():
 
 
 def test_fmt_time():
-    assert fmt_time(900) == "15:00"
+    assert fmt_time(600) == "10:00"
     assert fmt_time(61) == "01:01"
     assert fmt_time(-5) == "00:00"
 
@@ -102,7 +102,7 @@ def test_race_message_flow():
 
 
 if __name__ == "__main__":
-    tests = [test_duration_is_15_minutes,
+    tests = [test_duration_is_10_minutes,
              test_rank_levels_then_restarts_then_steps,
              test_score_mirrors_rank_order, test_fmt_time,
              test_race_message_flow]

@@ -13,6 +13,7 @@ from __future__ import annotations
 from graficial import Window
 from levels_data import ALL_LEVELS
 from registry import PropertyRegistry
+from view import GameView
 from tile_renderer import (
     draw_wall, draw_floor, draw_goal, draw_player,
     draw_void,
@@ -26,6 +27,10 @@ from tile_renderer import (
     draw_laser, draw_lever,
     draw_latch_closed, draw_latch_open,
     draw_seal_wall, draw_warp, draw_mine,
+    draw_parallax_grid, draw_vignette,
+    draw_warp_fx, draw_mine_fx, draw_block_fx,
+    draw_laser_fx, draw_trap_fx, draw_goal_fx,
+    draw_dust_puff, _soft_shadow,
     get_canvas_photo, get_panel_photo, get_panel_slice,
 )
 from multiplayer.race import (Standing, compute_standings, fmt_time,
@@ -64,6 +69,9 @@ CAM_ZOOM_LERP  = 0.35 # per-tick easing for smooth zoom
 CAM_ZOOM_EPS   = 0.01
 CAM_ZOOM_MIN   = 0.2
 CAM_ZOOM_MAX   = 2.0
+FX_TICK_MS     = 150  # ambient animation clock (sparks, shimmer, current, bob)
+FX_DUST_S      = 0.8  # footstep dust lifetime in seconds
+FX_DUST_CAP    = 14   # max remembered footfalls
 
 # ── per-level hints (HINTS panel) ───────────────────────────────────
 # One entry per level in ALL_LEVELS, index-aligned with level_index.
@@ -109,7 +117,7 @@ HELP_PANEL_TEXT = (
 )
 
 
-class GUIEngine:
+class GUIEngine(GameView):
     # ── construction ────────────────────────────────────────────────
     def __init__(self, start_index: int = 0, race=None):
         """`race` (optional) = {"role","net","name","duration_s"} for LAN races."""
@@ -155,6 +163,12 @@ class GUIEngine:
         # visual signature changed instead of clearing the whole canvas.
         self._board_geom = None
         self._cell_sigs: dict[tuple[int, int], tuple] = {}
+        # ambient fx state: animation phase, footstep dust trail, last
+        # camera geometry (so the overlay can map cells to pixels)
+        self._fx_phase = 0
+        self._fx_job = None
+        self._dust: list[tuple[int, int, float]] = []
+        self._last_cam = None
 
         # window + layout
         self.window = Window("Type Is Code", 1280, 680, bg=BACKGROUND,
@@ -169,6 +183,8 @@ class GUIEngine:
 
         # initial render (deferred so geometry is settled)
         self.window.root.after(50, lambda: self.render_frame(self._last_message))
+        # ambient animation clock (fx overlay only; base board untouched)
+        self.window.root.after(FX_TICK_MS, self._fx_tick)
         if self.race is not None:
             self._race_report()
             self.window.root.after(500, self._race_tick)
@@ -223,6 +239,10 @@ class GUIEngine:
         self.level = self.current_builder()()
         self.level.reset()
         self._snap_camera_to_player()
+        try:
+            del self._dust[:]
+        except Exception:
+            pass
 
     def next_level(self) -> bool:
         if self.level_index + 1 >= len(ALL_LEVELS):
@@ -233,6 +253,10 @@ class GUIEngine:
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
         self._snap_camera_to_player()
+        try:
+            del self._dust[:]
+        except Exception:
+            pass
         return True
 
     # ── LAN race ("I'm faster than you") ────────────────────────────
@@ -274,6 +298,14 @@ class GUIEngine:
             lines.append("(waiting for racers...)")
         lines.append("Score = Lv*10000 - restarts*100 - steps")
         return "\n".join(lines)
+
+    def _cancel_fx_tick(self):
+        job, self._fx_job = self._fx_job, None
+        if job is not None:
+            try:
+                self.window.root.after_cancel(job)
+            except Exception:
+                pass
 
     def _cancel_race_tick(self):
         job, self._race_job = self._race_job, None
@@ -368,7 +400,7 @@ class GUIEngine:
                     self.race_title.configure(text="TIME! 00:00")
                 else:
                     self.race_title.configure(
-                        text="RACE  %s left" % fmt_time(self._race_ends_at - now))
+                        text="%s minute left" % fmt_time(self._race_ends_at - now))
             except Exception:
                 pass
             if changed:
@@ -494,6 +526,160 @@ class GUIEngine:
             # Never let a background tick kill the game (e.g. window
             # destroyed mid-animation).
             self._cam_anim = None
+
+    # ── ambient fx layer ────────────────────────────────────────────
+    def _fx_tick(self):
+        """Ambient animation clock: advance phase, repaint overlays only.
+
+        The base board (and its incremental cache) is never touched
+        here — only items tagged "fx" are deleted and redrawn, so the
+        120fps input path is unaffected.
+        """
+        self._fx_job = None
+        try:
+            self._fx_phase += 1
+            self._prune_dust()
+            self._draw_fx_overlay()
+        except Exception:
+            pass
+        try:
+            self._fx_job = self.window.root.after(FX_TICK_MS, self._fx_tick)
+        except Exception:
+            self._fx_job = None
+
+    def _prune_dust(self):
+        try:
+            import time as _time
+            now = _time.time()
+            self._dust = [(x, y, t) for (x, y, t) in self._dust
+                          if now - t < FX_DUST_S][-FX_DUST_CAP:]
+        except Exception:
+            pass
+
+    def _draw_fx_overlay(self):
+        """Redraw the dynamic layer: actor bob, dust, sparks, shimmer.
+
+        Reads (never writes) the base board: cell art stays exactly as
+        render_frame painted it; animated extras go on top tagged "fx".
+        Safe to call from render_frame and from the ambient tick.
+        """
+        try:
+            raw = self.canvas.raw
+            raw.delete("fx")
+            cam = self._last_cam
+            if cam is None:
+                return
+            cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy, cw, ch = cam
+            try:
+                cw_now, ch_now = self.canvas.get_size()
+            except Exception:
+                return
+            if (cw_now, ch_now) != (cw, ch) or cell < 1:
+                return  # geometry changed; a full render is imminent
+            import math as _math
+            import time as _time
+            now = _time.time()
+            cols = self.level.width
+            rows = self.level.height
+            x0i = max(0, int(_math.floor(cam_x0)))
+            y0i = max(0, int(_math.floor(cam_y0)))
+            x1i = min(cols, int(_math.ceil(cam_x0 + view_cols)))
+            y1i = min(rows, int(_math.ceil(cam_y0 + view_rows)))
+
+            def _px(gx: int) -> int:
+                return int(round(ox + (gx - cam_x0) * cell))
+
+            def _py(gy: int) -> int:
+                return int(round(oy + (gy - cam_y0) * cell))
+
+            phase = self._fx_phase
+            is_global = getattr(self.level, "rule_mode", "circuit") == "global"
+            show_warps = bool(getattr(self, "_show_warps", True))
+            active_slots = {(sx, sy)
+                            for _c in getattr(self.level, "circuits", [])
+                            for (sx, sy) in getattr(_c, "slot_positions", [])}
+            if is_global:
+                for gy in range(y0i, y1i):
+                    for gx in range(x0i, x1i):
+                        px, py = _px(gx), _py(gy)
+                        terr = self.level.terrain_at(gx, gy)
+                        tcls = terr.__class__.__name__ if terr is not None else ""
+                        if tcls == "Warp":
+                            if show_warps:
+                                draw_warp_fx(raw, px, py, cell, phase, tags="fx")
+                        elif tcls in ("HiddenBoom", "HardMine", "BorderMine"):
+                            draw_mine_fx(raw, px, py, cell, phase, tags="fx")
+                        elif tcls == "LaserDoor":
+                            try:
+                                _blocking = terr.is_blocking()
+                            except Exception:
+                                _blocking = False
+                            if _blocking:
+                                draw_laser_fx(raw, px, py, cell, phase, tags="fx")
+                        elif tcls == "Trap":
+                            try:
+                                _lethal = terr.is_lethal()
+                            except Exception:
+                                _lethal = False
+                            if _lethal:
+                                draw_trap_fx(raw, px, py, cell, phase, tags="fx")
+                        tile = self.level.tile_at(gx, gy)
+                        if tile.__class__.__name__ == "Goal":
+                            draw_goal_fx(raw, px, py, cell, phase, tags="fx")
+                        blk = self.level.block_at(gx, gy)
+                        if blk is not None and (gx, gy) in active_slots:
+                            draw_block_fx(raw, px, py, cell, phase,
+                                          blk.kind, tags="fx")
+            else:
+                for gy in range(y0i, y1i):
+                    for gx in range(x0i, x1i):
+                        px, py = _px(gx), _py(gy)
+                        occ = self.level.object_at(gx, gy)
+                        cls = occ.__class__.__name__ if occ is not None else ""
+                        if cls == "Warp":
+                            if show_warps:
+                                draw_warp_fx(raw, px, py, cell, phase, tags="fx")
+                        elif cls == "LaserDoor":
+                            try:
+                                _blocking = occ.is_blocking()
+                            except Exception:
+                                _blocking = False
+                            if _blocking:
+                                draw_laser_fx(raw, px, py, cell, phase, tags="fx")
+                        elif cls == "Trap":
+                            try:
+                                _lethal = occ.is_lethal()
+                            except Exception:
+                                _lethal = False
+                            if _lethal:
+                                draw_trap_fx(raw, px, py, cell, phase, tags="fx")
+                        elif cls == "CodeBlock":
+                            if (gx, gy) in active_slots:
+                                draw_block_fx(raw, px, py, cell, phase,
+                                              occ.kind, tags="fx")
+                        tile = self.level.tile_at(gx, gy)
+                        if tile.__class__.__name__ == "Goal":
+                            draw_goal_fx(raw, px, py, cell, phase, tags="fx")
+            # living actor: breathing bob over a grounded soft shadow
+            p = getattr(self.level, "player", None)
+            if p is not None and not self.level.dead \
+                    and not self.level.player_invisible \
+                    and x0i <= p.x < x1i and y0i <= p.y < y1i:
+                px, py = _px(p.x), _py(p.y)
+                amp = max(1, cell // 22)
+                bob = int(round(amp * _math.sin(phase * 0.85)))
+                _soft_shadow(raw, px, py, cell, tags="fx")
+                draw_player(raw, px, py + bob, cell, fast=False,
+                            floor=False, tags="fx")
+            # footstep dust, oldest faintest
+            for (dx, dy, t) in self._dust:
+                age = (now - t) / FX_DUST_S
+                if 0 <= age <= 1 and x0i <= dx < x1i and y0i <= dy < y1i:
+                    draw_dust_puff(raw, _px(dx) + cell // 2,
+                                   _py(dy) + int(cell * 0.8),
+                                   max(2, cell // 6), age, tags="fx")
+        except Exception:
+            pass
 
     def _compute_camera(self, cols: int, rows: int,
                         cw: int, ch: int, avail_w: int, avail_h: int):
@@ -688,6 +874,12 @@ class GUIEngine:
         avail_h = ch - 2 * BOARD_PADDING
         cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy = \
             self._compute_camera(cols, rows, cw, ch, avail_w, avail_h)
+        self._last_cam = (cell, cam_x0, cam_y0, view_cols, view_rows,
+                          ox, oy, cw, ch)
+        # Blocks on a circuit line render in their "active" electric state.
+        active_slots = {(sx, sy)
+                        for _c in getattr(self.level, "circuits", [])
+                        for (sx, sy) in getattr(_c, "slot_positions", [])}
         # Single art path at every zoom: tiles must look identical whether
         # zoomed on a room or viewing the full map, so no LOD switching.
         # Speed in full-map view comes from the incremental repaint below,
@@ -744,6 +936,11 @@ class GUIEngine:
                 self._bg_photo = bg_photo  # keep a ref so Tk does not blank it
                 raw.create_image(0, 0, image=bg_photo, anchor="nw")
 
+            # ambient atmosphere: faded parallax grid + vignette behind
+            # the board, so the map sits in a deeper, cohesive space
+            draw_parallax_grid(raw, cw, ch, cam_x0, cam_y0, cell)
+            draw_vignette(raw, cw, ch)
+
             # board drop shadow for lifted-map 3D look
             raw.create_rectangle(ox - 3 + 6, oy - 3 + 8,
                                  ox + board_w + 3 + 6, oy + board_h + 3 + 8,
@@ -785,14 +982,14 @@ class GUIEngine:
 
                     # 1. background tile (decoy Goals read as floor relocated)
                     if tile_cls == "Wall":
-                        draw_wall(raw, px, py, cell, fast=fast)
+                        draw_wall(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
                     elif tile_cls == "Goal":
                         if flag_moved:
-                            draw_floor(raw, px, py, cell, fast=fast)
+                            draw_floor(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
                         else:
                             draw_goal(raw, px, py, cell, fast=fast)
                     else:
-                        draw_floor(raw, px, py, cell, fast=fast)
+                        draw_floor(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
                         if flag_moved and flag2 is not None and (gx, gy) == flag2:
                             draw_goal(raw, px, py, cell, fast=fast)
                         elif gate_on and gate2 is not None and (gx, gy) == gate2:
@@ -862,7 +1059,8 @@ class GUIEngine:
                     blk = self.level.block_at(gx, gy)
                     if blk is not None:
                         draw_code_block(raw, px, py, cell,
-                                        blk.glyph().strip(), blk.kind, fast=fast)
+                                        blk.glyph().strip(), blk.kind, fast=fast,
+                                        active=(gx, gy) in active_slots)
 
                     # 4. player layer
                     is_player = (self.level.player and
@@ -894,7 +1092,8 @@ class GUIEngine:
                             else:
                                 draw_player(raw, px, py, cell, fast=fast)
                         else:
-                            draw_player(raw, px, py, cell, fast=fast)
+                            # alive actor lives in the fx overlay (breath + shadow)
+                            pass
         else:
             for gy in range(y0i, y1i):
                 for gx in range(x0i, x1i):
@@ -907,11 +1106,11 @@ class GUIEngine:
 
                     # 1. background tile — walls always look the same, passable or not
                     if tile_cls == "Wall":
-                        draw_wall(raw, px, py, cell, fast=fast)
+                        draw_wall(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
                     elif tile_cls == "Goal":
                         draw_goal(raw, px, py, cell, fast=fast)
                     else:
-                        draw_floor(raw, px, py, cell, fast=fast)
+                        draw_floor(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
 
                     # 2. dynamic object on top
                     occ = self.level.object_at(gx, gy)
@@ -933,7 +1132,9 @@ class GUIEngine:
                         # empty pit is drawn.
                         draw_void(raw, px, py, cell, fast=fast)
                     elif is_player:
-                        draw_player(raw, px, py, cell, fast=fast)
+                        if self.level.dead or self.level.player_invisible:
+                            draw_player(raw, px, py, cell, fast=fast)
+                        # else: alive actor lives in the fx overlay.
                     elif occ is not None:
                         if cls == "Platform":
                             if occ.is_void():
@@ -986,7 +1187,8 @@ class GUIEngine:
                         elif cls == "CodeBlock":
                             label = occ.glyph().strip()
                             kind = occ.kind
-                            draw_code_block(raw, px, py, cell, label, kind, fast=fast)
+                            draw_code_block(raw, px, py, cell, label, kind, fast=fast,
+                                            active=(gx, gy) in active_slots)
 
         if full and not board_only:
             # Full repaints own every visible cell: snapshot signatures so
@@ -998,6 +1200,11 @@ class GUIEngine:
                 for _gx in range(x0i, x1i):
                     fresh[(_gx, _gy)] = self._cell_sig(_gx, _gy)
             self._cell_sigs = fresh
+
+        # ── ambient fx overlay (actor, dust, sparks, shimmer) ──
+        # Painted on every frame (full or camera tick) and on the ambient
+        # clock; the base cells above are never touched by it.
+        self._draw_fx_overlay()
 
         # ── info panel ──
         # Camera ticks redraw only the canvas and return early: panel
@@ -1033,7 +1240,7 @@ class GUIEngine:
                     self.race_title.configure(text="TIME! 00:00")
                 elif self._race_ends_at is not None:
                     self.race_title.configure(
-                        text="RACE  %s left" % fmt_time(self._race_ends_at - _time3.time()))
+                        text="%s minute left" % fmt_time(self._race_ends_at - _time3.time()))
                 if not self.race_title.winfo_ismapped():
                     self.race_title.pack(fill="x", padx=12, pady=5, anchor="nw")
                 if not self.race_view._text.winfo_ismapped():
@@ -1151,8 +1358,6 @@ class GUIEngine:
         key = arrow_map.get(key, key)
 
         if key == "q":
-            self._cancel_camera_anim()
-            self._cancel_race_tick()
             if self.race is not None:
                 try:
                     if self._race_is_host():
@@ -1161,7 +1366,7 @@ class GUIEngine:
                         self.race["net"].leave()
                 except Exception:
                     pass
-            self.window.root.destroy()
+            self.close()
             return
         if key == "h":
             self.render_frame("Arrows/WASD move. R=restart. +/-=zoom. 0/F=fit map. C=center. Q=quit.")
@@ -1218,7 +1423,18 @@ class GUIEngine:
             return
 
         m0 = self.level.moves
+        _pp = getattr(self.level, "player", None)
+        _px0 = _pp.x if _pp is not None else None
+        _py0 = _pp.y if _pp is not None else None
         msg = self.level.move_player(key)
+        if self.level.moves > m0 and _px0 is not None:
+            # footstep dust where the actor pushed off from
+            import time as _time
+            try:
+                self._dust.append((_px0, _py0, _time.time()))
+                del self._dust[:-FX_DUST_CAP]
+            except Exception:
+                pass
         if self.race is not None and self.level.moves > m0:
             self._race_moves += self.level.moves - m0
             self._race_report()
@@ -1242,6 +1458,21 @@ class GUIEngine:
         # no background tick storm competes with the next keypress.
         self._nudge_camera_toward_target(1.0)
         self.render_frame(msg)
+
+    # ── GameView seam ─────────────────────────────────────────────
+    def render(self, message: str = "") -> None:
+        """Paint the current level state (GameView contract)."""
+        self.render_frame(message)
+
+    def close(self) -> None:
+        """Cancel clocks and destroy the window (GameView contract)."""
+        self._cancel_camera_anim()
+        self._cancel_race_tick()
+        self._cancel_fx_tick()
+        try:
+            self.window.root.destroy()
+        except Exception:
+            pass
 
     # ── entry point ─────────────────────────────────────────────────
     def run(self):

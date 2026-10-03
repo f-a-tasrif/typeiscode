@@ -55,6 +55,10 @@ def _check_photo_root():
         _skel_photos.clear()
         _lever_photos.clear()
         _panel_photos.clear()
+        try:
+            _player_photos.clear()
+        except NameError:
+            pass
         _photo_root = cur
 
 
@@ -83,16 +87,17 @@ PLAYER_COWL    = "#2e3a4e"
 PLAYER_SKIN    = "#f2c79b"
 PLAYER_SUIT    = "#a8a8b0"
 PLAYER_BELT    = "#f2d23c"
-GOOMBA_OUTLINE = "#0a0a0a"
-GOOMBA_DARK    = "#5a3018"
-GOOMBA_BODY    = "#a65e2e"
-GOOMBA_LIGHT   = "#d18a4d"
-GOOMBA_EYE     = "#ffffff"
-GOOMBA_PUPIL   = "#101018"
-GOOMBA_FANG    = "#ffffff"
-GOOMBA_STEM    = "#e3cda3"
-GOOMBA_FOOT    = "#6b4423"
-GOOMBA_FOOT_HI = "#a67c3d"
+KNIGHT_OUTLINE = "#0a0a0a"
+KNIGHT_DARK    = "#5a5e6e"
+KNIGHT_BODY    = "#9aa0b0"
+KNIGHT_LIGHT   = "#d8dce4"
+KNIGHT_HILITE  = "#eef1ff"
+KNIGHT_VISOR   = "#0a0a0a"
+KNIGHT_SWORD   = "#e8ecf4"
+KNIGHT_HILT    = "#c46a2a"
+KNIGHT_TRIM    = "#e3cda3"
+KNIGHT_FOOT    = "#2e3138"
+KNIGHT_FOOT_HI = "#6a6e7a"
 PLATFORM_SOLID = "#7b5cff"
 PLATFORM_PILLAR= "#5a3fd6"
 PLATFORM_GHOST = "#574d87"
@@ -213,10 +218,235 @@ def _rounded_rect(canvas, x1, y1, x2, y2, r, **kw):
     canvas.create_polygon(flat, smooth=False, **kw)
 
 
+# ── polish helpers: variation, glow, shadow, atmosphere ──────────────
+# All polish is deterministic per (cell, phase): the base board never
+# flickers (the incremental repaint cache stays valid) and every
+# animated bit lives in the fx overlay (see GUIEngine._draw_fx_overlay),
+# the only layer redrawn on the ambient tick.
+
+def _hash01(x: int, y: int, salt: int = 0) -> float:
+    """Deterministic 0..1 variation per cell (stable across frames)."""
+    h = (int(x) * 374761393 + int(y) * 668265263
+         + int(salt) * 2246822519) & 0xFFFFFFFF
+    h ^= h >> 13
+    h = (h * 1274126177) & 0xFFFFFFFF
+    h ^= h >> 16
+    return (h & 0xFFFF) / 65535.0
+
+
+def _soft_shadow(canvas, x, y, size, tags=None):
+    """Soft-focus contact shadow: stippled dark ellipse under a sprite."""
+    try:
+        hh = max(2, size // 8)
+        dy = size // 6
+        m = max(2, size // 5)
+        canvas.create_oval(x + m, y + size - dy - hh,
+                           x + size - m, y + size - dy + hh,
+                           fill="#05070f", outline="", stipple="gray50",
+                           tags=tags)
+    except Exception:
+        pass
+
+
+def _glow(canvas, cx, cy, r, color, layers=3, tags=None):
+    """Fake bloom: concentric outline ovals fading outward (no alpha)."""
+    if r < 3:
+        return
+    step = max(2, r // 4)
+    for i in range(max(1, layers)):
+        rr = r + i * step
+        canvas.create_oval(cx - rr, cy - rr, cx + rr, cy + rr,
+                           fill="", outline=color,
+                           width=max(1, 3 - i), tags=tags)
+
+
+def _gleam(canvas, x, y, size, color="#f4f6ff", tags=None):
+    """Small metallic diagonal highlight in the top-left of a cell."""
+    m = max(2, int(size * 0.20))
+    ln = max(3, int(size * 0.28))
+    canvas.create_line(x + m, y + m + ln, x + m + ln, y + m,
+                       fill=color, width=max(1, size // 26), tags=tags)
+
+
+def draw_parallax_grid(canvas, cw, ch, cam_x0, cam_y0, cell):
+    """Faded distant grid layer drifting slower than the board (parallax)."""
+    try:
+        step = max(26, int(cell * 2))
+        ox = -int((cam_x0 * cell * 0.35) % step)
+        oy = -int((cam_y0 * cell * 0.35) % step)
+        for gx in range(ox, cw + 1, step):
+            canvas.create_line(gx, 0, gx, ch, fill="#1a2140", width=1)
+        for gy in range(oy, ch + 1, step):
+            canvas.create_line(0, gy, cw, gy, fill="#1a2140", width=1)
+    except Exception:
+        pass
+
+
+def draw_vignette(canvas, cw, ch):
+    """Soft darkened frame edges for ambient focus."""
+    try:
+        d = max(10, min(cw, ch) // 10)
+        kw = {"fill": "#04060d", "outline": "", "stipple": "gray25"}
+        canvas.create_rectangle(0, 0, cw, d, **kw)
+        canvas.create_rectangle(0, ch - d, cw, ch, **kw)
+        canvas.create_rectangle(0, 0, d, ch, **kw)
+        canvas.create_rectangle(cw - d, 0, cw, ch, **kw)
+    except Exception:
+        pass
+
+
+# ── fx overlay: animated bits, redrawn on the ambient tick ───────────
+SPARK_WARM = "#ffd45a"
+SPARK_HOT = "#fff6c8"
+SPARK_DEEP = "#ff9d2e"
+WISP_COOL = "#9a8fff"
+
+BLOCK_FX_COLORS = {
+    "CLASS": "#52b0ff",
+    "PROP": "#40d8a0",
+    "OP": "#d0a840",
+    "VALUE": "#b070e0",
+    "NOT": "#ff5f8f",
+}
+
+
+def _mine_fuse_tip(x, y, size):
+    """Fuse tip pixel shared by the static stem and the animated spark."""
+    return x + int(size * 0.64), y + int(size * 0.10)
+
+
+def draw_fuse_spark(canvas, tx, ty, size, phase, tags=None):
+    """Sputtering fuse tip: warm star + glow + stray embers (animated)."""
+    import math as _math
+    r = max(2, size // 10)
+    _glow(canvas, tx, ty, r + 2 + (phase % 2), SPARK_DEEP,
+          layers=2, tags=tags)
+    reach = r + 1 + (phase % 3)
+    w = max(1, size // 26)
+    canvas.create_line(tx - reach, ty, tx + reach, ty,
+                       fill=SPARK_WARM, width=w, tags=tags)
+    canvas.create_line(tx, ty - reach, tx, ty + reach,
+                       fill=SPARK_HOT, width=w, tags=tags)
+    canvas.create_oval(tx - 1, ty - 1, tx + 1, ty + 1,
+                       fill=SPARK_HOT, outline=SPARK_HOT, tags=tags)
+    for i in range(3):
+        a = _hash01(tx + i * 11, ty - i * 17, phase) * 6.2832
+        d = r + 3 + int(_hash01(tx - i * 5, ty + i * 3, phase + 7)
+                        * max(2, size // 8))
+        ex = tx + int(_math.cos(a) * d)
+        ey = ty + int(_math.sin(a) * d)
+        c = (SPARK_HOT, SPARK_WARM, SPARK_DEEP)[(phase + i) % 3]
+        canvas.create_oval(ex - 1, ey - 1, ex + 1, ey + 1,
+                           fill=c, outline=c, tags=tags)
+
+
+def draw_mine_fx(canvas, px, py, size, phase, tags=None):
+    """Burning-fuse overlay: pulsing warm body glow + sputtering tip."""
+    cx, cy = px + size // 2, py + size // 2
+    _glow(canvas, cx, cy, size // 2 - 2 + (phase % 2) * 2,
+          SPARK_DEEP, layers=2, tags=tags)
+    tx, ty = _mine_fuse_tip(px, py, size)
+    draw_fuse_spark(canvas, tx, ty, size, phase, tags=tags)
+
+
+def draw_warp_fx(canvas, px, py, size, phase, tags=None):
+    """Portal shimmer: rotating vortex arcs, cool glow, rising wisps."""
+    import math as _math
+    cx, cy = px + size // 2, py + size // 2
+    r = max(4, size // 2 - max(2, size // 8))
+    _glow(canvas, cx, cy, r + (phase % 2), "#6366f1",
+          layers=2, tags=tags)
+    for k in range(3):
+        rr = max(3, r - k * max(2, size // 14))
+        start = (phase * 22 + k * 120) % 360
+        canvas.create_arc(cx - rr, cy - rr, cx + rr, cy + rr,
+                          start=start, extent=210, style="arc",
+                          outline="#9a8fff" if k % 2 else "#6366f1",
+                          width=max(1, size // 22), tags=tags)
+    # bright core mote orbiting inside the vortex
+    a = (phase * 0.6) % 6.2832
+    ox = int(_math.cos(a) * r * 0.35)
+    oy = int(_math.sin(a) * r * 0.35)
+    canvas.create_oval(cx + ox - 2, cy + oy - 2, cx + ox + 2, cy + oy + 2,
+                       fill="#cfc8ff", outline="#cfc8ff", tags=tags)
+    # occasional wisps floating off the rim
+    for i in range(2):
+        seed = int(_hash01(px + i * 13, py - i * 7, 90) * 8)
+        if (phase + seed + i * 3) % 8 >= 5:
+            continue
+        ang = _hash01(px - i * 3, py + i * 29, 91) * 6.2832
+        lift = (phase * 2 + i * 6) % max(4, size // 3)
+        wx = cx + int(_math.cos(ang) * (r + lift))
+        wy = cy + int(_math.sin(ang) * (r + lift)) - lift // 2
+        wr = max(1, size // 24)
+        canvas.create_oval(wx - wr, wy - wr, wx + wr, wy + wr,
+                           fill=WISP_COOL, outline=WISP_COOL, tags=tags)
+
+
+def draw_block_fx(canvas, px, py, size, phase, kind, tags=None):
+    """Current flowing through an active block: dashes + edge glow."""
+    color = BLOCK_FX_COLORS.get(kind, "#42a7ff")
+    m = max(1, size // 10)
+    x1, y1, x2, y2 = px + m, py + m, px + size - m, py + size - m
+    _glow(canvas, (x1 + x2) // 2, (y1 + y2) // 2,
+          max(3, (x2 - x1) // 2), color, layers=1, tags=tags)
+    n = 3
+    w = max(1, size // 26)
+    for i in range(n):
+        t = (i / n + phase * 0.15) % 1.0
+        dx = x1 + int(t * (x2 - x1))
+        canvas.create_line(dx - 2, y1, dx + 2, y1,
+                           fill="#ffffff", width=w, tags=tags)
+        dx2 = x2 - int(t * (x2 - x1))
+        canvas.create_line(dx2 - 2, y2, dx2 + 2, y2,
+                           fill=color, width=w, tags=tags)
+
+
+def draw_laser_fx(canvas, px, py, size, phase, tags=None):
+    """Live-beam shimmer: hot pulsing core over the gate."""
+    m = max(2, size // 10)
+    cx = px + size // 2
+    hot = "#ffffff" if phase % 2 == 0 else "#ffd0d0"
+    _glow(canvas, cx, py + size // 2, size // 3, "#e34b3e",
+          layers=2, tags=tags)
+    canvas.create_line(cx, py + m, cx, py + size - m,
+                       fill=hot, width=max(1, size // 20), tags=tags)
+
+
+def draw_trap_fx(canvas, px, py, size, phase, tags=None):
+    """Menace pulse around a live trap."""
+    cx, cy = px + size // 2, py + size // 2
+    _glow(canvas, cx, cy, size // 2 - 2 + (phase % 2),
+          "#e05565", layers=2, tags=tags)
+
+
+def draw_goal_fx(canvas, px, py, size, phase, tags=None):
+    """Gentle breathing glow around the goal flag."""
+    cx, cy = px + size // 2, py + size // 2
+    _glow(canvas, cx, cy, size // 2 - 1 + (phase % 2),
+          "#4adc6e", layers=2, tags=tags)
+
+
+def draw_dust_puff(canvas, px, py, r, age01, tags=None):
+    """Faint footstep dust: expands and fades with age (0..1)."""
+    if not 0 <= age01 <= 1:
+        return
+    try:
+        rr = max(1, int(r * (0.6 + age01 * 0.9)))
+        col = "#9aa0bd" if age01 < 0.5 else "#5a5e78"
+        canvas.create_oval(px - rr, py - rr, px + rr, py + rr,
+                           fill="", outline=col, width=1,
+                           stipple="" if age01 < 0.35 else "gray50",
+                           tags=tags)
+    except Exception:
+        pass
+
+
 # ── entity drawing functions ────────────────────────────────────────
 
-def draw_wall(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
-    """Brick-pattern wall with raised 3D bevel."""
+def draw_wall(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False,
+              gx: int = 0, gy: int = 0):
+    """Brick-pattern wall with raised 3D bevel, stone chips and moss."""
     if fast:
         # LOD: 1 item instead of ~10 (brick lines + 4-poly bevel).
         canvas.create_rectangle(x, y, x + size, y + size,
@@ -241,10 +471,25 @@ def draw_wall(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
                                    fill=WALL_MORTAR, width=1)
     # raised-block bevel on top of the brickwork
     _bevel(canvas, x, y, size, WALL_HI, WALL_SHADOW)
+    # worn-stone texture: a darker chip + occasional moss, fixed per cell
+    if _hash01(gx, gy, 11) < 0.5:
+        cw = max(2, size // 5)
+        chh = max(1, size // 9)
+        cxp = x + int(_hash01(gx, gy, 12) * max(1, size - cw))
+        cyp = y + int(_hash01(gx, gy, 13) * max(1, size - chh))
+        canvas.create_rectangle(cxp, cyp, cxp + cw, cyp + chh,
+                                fill="#2e324e", outline="")
+    if size >= 20 and _hash01(gx, gy, 14) < 0.16:
+        for i in range(3):
+            mx = x + int(_hash01(gx, gy, 15 + i) * (size - 2)) + 1
+            my = y + int(_hash01(gx, gy, 18 + i) * (size - 2)) + 1
+            canvas.create_rectangle(mx, my, mx + 2, my + 2,
+                                    fill="#3a6a3a", outline="")
 
 
-def draw_floor(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
-    """Subtle dark floor tile, recessed for contrast with walls."""
+def draw_floor(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False,
+               gx: int = 0, gy: int = 0):
+    """Subtle dark floor tile with worn-pavement grime, recessed bevel."""
     if fast:
         # LOD: 1 item instead of 6 (inner accent + 4-poly bevel).
         canvas.create_rectangle(x, y, x + size, y + size,
@@ -259,6 +504,18 @@ def draw_floor(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False)
     # recessed bevel (inverted light): sunken pit vs raised walls
     _bevel(canvas, x, y, size, FLOOR_SHADOW, FLOOR_HI,
            depth=max(1, size // 12))
+    # floor grime: faint speckles, fixed per cell
+    if _hash01(gx, gy, 21) < 0.55:
+        for i in range(2):
+            sx = x + int(_hash01(gx, gy, 22 + i) * (size - 2)) + 1
+            sy = y + int(_hash01(gx, gy, 24 + i) * (size - 2)) + 1
+            canvas.create_rectangle(sx, sy, sx + 2, sy + 1,
+                                    fill="#141838", outline="")
+    # occasional hairline crack in the pavement
+    if size >= 22 and _hash01(gx, gy, 26) < 0.12:
+        cx0 = x + int(_hash01(gx, gy, 27) * size)
+        canvas.create_line(cx0, y + 2, x + size - cx0 // 2, y + size - 2,
+                           fill="#0d1024", width=1)
 
 
 def draw_goal(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
@@ -293,73 +550,85 @@ def draw_goal(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     fh = int(size * 0.3)
     canvas.create_polygon(fx, fy, fx + fw, fy + fh // 2, fx, fy + fh,
                           fill=GOAL_FLAG, outline="#38c85c", width=1)
+    # energy bloom around the flag
+    _glow(canvas, x + size // 2, y + size // 2, size // 2, "#4adc6e")
 
 
-def draw_player(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
-    """Goomba pixel character (from Downloads/goomba.png).
+def draw_player(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False,
+                floor: bool = True, tags=None):
+    """Knight pixel character (assets/player.png).
 
-    Brown mushroom body with dark outline, white eyes with dark
-    pupils and angry brows, small fangs, beige stem and brown feet.
-    Drawn as chunky pixels so it reads clearly at any cell size.
-    No external assets required.
+    Silver helmet with a black T visor, grey plate body and dark
+    boots.  The photo is fitted into the cell; without Pillow / the
+    asset / a Tk root, falls back to procedural armor pixels so tests
+    stay headless-safe.  `floor=False` skips the floor + shadow base
+    for overlay draws; `tags` marks items for the fx layer.
     """
-    draw_floor(canvas, x, y, size, fast=fast)
+    if floor:
+        draw_floor(canvas, x, y, size, fast=fast)
+    _soft_shadow(canvas, x, y, size, tags=tags)
+    # Photo first in both modes (see draw_door_closed).
+    photo = None
+    try:
+        photo = _player_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center", tags=tags)
+        return
     if fast:
-        # LOD: 4 items instead of ~60 RLE rects. Reads as the same
-        # character at speed: body, stem, two eyes.
+        # LOD: 3 items instead of ~60 RLE rects. Reads as the same
+        # character at speed: helm, visor slit, plate body.
         m = max(1, size // 8)
-        canvas.create_oval(x + m, y + m, x + size - m, y + size - m,
-                           fill=GOOMBA_BODY, outline=GOOMBA_OUTLINE,
-                           width=max(1, size // 20))
-        cx = x + size // 2
-        canvas.create_rectangle(cx - max(1, size // 10), y + size // 2,
-                                cx + max(1, size // 10), y + size - m,
-                                fill=GOOMBA_STEM, outline="")
-        er = max(1, size // 10)
-        for dx in (-1, 1):
-            ex = cx + dx * int(size * 0.2)
-            ey = y + int(size * 0.38)
-            canvas.create_oval(ex - er, ey - er, ex + er, ey + er,
-                               fill=GOOMBA_EYE, outline="")
+        canvas.create_oval(x + m, y + m, x + size - m,
+                           y + int(size * 0.62),
+                           fill=KNIGHT_LIGHT, outline=KNIGHT_OUTLINE,
+                           width=max(1, size // 20), tags=tags)
+        canvas.create_rectangle(x + size // 4, y + int(size * 0.30),
+                                x + size - size // 4, y + int(size * 0.48),
+                                fill=KNIGHT_VISOR, outline="", tags=tags)
+        canvas.create_rectangle(x + m, y + int(size * 0.60),
+                                x + size - m, y + size - m,
+                                fill=KNIGHT_BODY, outline=KNIGHT_OUTLINE,
+                                width=max(1, size // 20), tags=tags)
         return
 
-    # 16 wide x 20 tall pixel map. '.' = transparent.
-    # K=outline black, D=dark brown shade, B=body brown,
-    # L=light highlight, W=eye white, P=pupil,
-    # F=fang white, T=stem beige, E=foot dark, O=foot highlight.
+    # 16 wide x 19 tall pixel map. '.' = transparent.
+    # K=outline black, L=helm light, W=helm shine,
+    # B=armor grey, D=armor shade, V=visor black,
+    # T=trim beige, E=boot dark, O=boot highlight.
     PIX = [
         "....KKKKKKKK....",
-        "..KKBBBBBBBBKK..",
-        ".KBBLLBBBBBBDDK.",
-        ".KBLBBBBBBBBDDK.",
-        ".KBBBBBBBBBBDDK.",
-        ".KBBWWKKKWWWBDK.",
-        ".KBBWWWWWWWWBDK.",
-        ".KBBWWPWWWPWBDK.",
-        ".KBBWWPWWWPWBDK.",
-        ".KBBWWWWWWWWBDK.",
-        ".KBFBBBBBBBFBDK.",
-        ".KBBFFKKKFFBBDK.",
-        ".KBBBBBBBBBBDDK.",
-        "..KKBBBBBBBBKK..",
-        "...KKDDDDDDKK...",
-        ".KEETTTTTTEEEKK.",
-        ".KEOOOTTTTEOOOK.",
-        ".KEEOOOTTEOOEEK.",
-        ".KKEEEEEEEEEEKK.",
+        "..KKLLLLLLLLKK..",
+        ".KLLWWLLLLLBBDK.",
+        ".KLWWLLLLLBBBDDK",
+        ".KLLLLLLLLBBBBDK",
+        ".KLLVVVVVVBBBBDK",
+        ".KLLVVVVVVBBBBDK",
+        ".KLLLVVVVLBBBBDK",
+        ".KLLLVVVVLBBBBDK",
+        "DKBBBBBBBBBBBBKD",
+        ".KBBTTTTTTBBBDDK",
+        "DKBBBBBBBBBBBBKD",
+        "..KBBBBBBBBDDK..",
+        "...KBBBBBBDDK...",
+        "...KBBBBBBDDK...",
+        "..KKBBBBBBDDKK..",
+        ".KKKEEEEEEEEKKK.",
+        ".KKKOEEEEEEOKKK.",
         "...KKKKKKKKKK...",
     ]
     COLORS = {
-        "K": GOOMBA_OUTLINE,
-        "D": GOOMBA_DARK,
-        "B": GOOMBA_BODY,
-        "L": GOOMBA_LIGHT,
-        "W": GOOMBA_EYE,
-        "P": GOOMBA_PUPIL,
-        "F": GOOMBA_FANG,
-        "T": GOOMBA_STEM,
-        "E": GOOMBA_FOOT,
-        "O": GOOMBA_FOOT_HI,
+        "K": KNIGHT_OUTLINE,
+        "D": KNIGHT_DARK,
+        "B": KNIGHT_BODY,
+        "L": KNIGHT_LIGHT,
+        "W": KNIGHT_HILITE,
+        "V": KNIGHT_VISOR,
+        "T": KNIGHT_TRIM,
+        "E": KNIGHT_FOOT,
+        "O": KNIGHT_FOOT_HI,
     }
     h = len(PIX)
     w = len(PIX[0])
@@ -383,7 +652,7 @@ def draw_player(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False
             x1 = x + i * px
             x2 = x + k * px + 0.5
             canvas.create_rectangle(x1, y1, x2, y2,
-                                    fill=COLORS[ch], outline="")
+                                    fill=COLORS[ch], outline="", tags=tags)
             i = k
 
 
@@ -414,12 +683,12 @@ def draw_boom_explosion(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool
     canvas.create_oval(cx - core, cy - core, cx + core, cy + core,
                        fill=EXPLOSION_CORE, outline=EXPLOSION_CORE)
 
-    # Goomba fragments so the character visibly breaks apart.
+    # Knight fragments so the character visibly breaks apart.
     fragment = max(2, size // 11)
-    for dx, dy, col in ((-0.34, -0.31, GOOMBA_BODY),
-                        (0.31, -0.25, GOOMBA_OUTLINE),
-                        (-0.38, 0.29, GOOMBA_OUTLINE),
-                        (0.35, 0.33, GOOMBA_BODY)):
+    for dx, dy, col in ((-0.34, -0.31, KNIGHT_BODY),
+                        (0.31, -0.25, KNIGHT_OUTLINE),
+                        (-0.38, 0.29, KNIGHT_OUTLINE),
+                        (0.35, 0.33, KNIGHT_BODY)):
         fx, fy = cx + int(size * dx), cy + int(size * dy)
         canvas.create_polygon(fx, fy - fragment,
                               fx + fragment, fy,
@@ -570,6 +839,7 @@ def draw_door_closed(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = 
     # door slab bevel for raised wood
     _bevel(canvas, x + m, y + m, size - 2 * m, DOOR_HI, DOOR_SHADOW,
            depth=max(1, size // 14))
+    _gleam(canvas, x, y, size)
 
 
 def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
@@ -700,7 +970,7 @@ def draw_latch_closed(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool =
                        fill="#ffd080", outline="#cc9040")
     _bevel(canvas, x + m, y + m, size - 2 * m, LATCH_HI, LATCH_SHADOW,
            depth=max(1, size // 14))
-
+    _gleam(canvas, x, y, size)
 
 def draw_latch_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Open latch door — pink split panels revealing the passage."""
@@ -752,6 +1022,7 @@ def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = 
                             fill="#2a1015", outline="#4a2025", width=1)
     _bevel(canvas, x, y, size, "#5a2025", "#0d0508",
            depth=max(1, size // 14))
+    _glow(canvas, x + size // 2, y + size // 2, size // 2, "#e05565")
     m = max(2, size // 6)
     # base diamond
     cx, cy = x + size // 2, y + size // 2
@@ -785,8 +1056,14 @@ def draw_trap_safe(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = Fa
 
 
 def draw_code_block(canvas: tk.Canvas, x: int, y: int, size: int,
-                    label: str, kind: str, fast: bool = False):
-    """Rounded-rectangle 'chip' with a label, extruded 3D keycap."""
+                    label: str, kind: str, fast: bool = False,
+                    active: bool = False):
+    """Crystalline 'chip' with a glowing label and current-flow state.
+
+    Metallic gradient bands + an inner text halo keep the label
+    readable; `active` marks blocks sitting on a circuit line with a
+    hot border (the flowing current itself is drawn by draw_block_fx).
+    """
     kind_colors = {
         "CLASS":  ("#1a4a7a", "#52b0ff"),
         "PROP":   ("#1a5a4a", "#40d8a0"),
@@ -819,12 +1096,28 @@ def draw_code_block(canvas: tk.Canvas, x: int, y: int, size: int,
     # inner highlight line at top
     canvas.create_line(x1 + r, y1 + 2, x2 - r, y1 + 2,
                        fill=border, width=1)
-    # label text
+    # crystalline bands: bright top facet, dark bottom facet
+    canvas.create_line(x1 + r, y1 + 4, x2 - r, y1 + 4,
+                       fill="#ffffff", width=1)
+    canvas.create_line(x1 + r, y2 - 3, x2 - r, y2 - 3,
+                       fill="#0a0c1a", width=2)
+    # left sheen strip for a metallic read
+    canvas.create_line(x1 + 3, y1 + r, x1 + 3, y2 - r,
+                       fill=border, width=1)
+    # active state: hot outer border so the block hums on its circuit
+    if active:
+        canvas.create_rectangle(x1 - 1, y1 - 1, x2 + 1, y2 + 1,
+                                fill="", outline="#ffffff",
+                                width=max(1, size // 28))
+    # label text with a faint internal glow (halo underlay + bright face)
     cx = x + size // 2
     cy = y + size // 2
     font_size = max(7, min(size // 5, 14))
+    _font = ("Consolas", font_size, "bold")
+    canvas.create_text(cx + 1, cy + 1, text=label, fill=border,
+                       font=_font, anchor="center")
     canvas.create_text(cx, cy, text=label, fill=BLOCK_TEXT,
-                       font=("Consolas", font_size, "bold"), anchor="center")
+                       font=_font, anchor="center")
 
 
 def draw_circuit_slot(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
@@ -880,6 +1173,7 @@ def draw_stone(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False)
     canvas.create_line(x + 1, y + 1, x + size - 1, y + 1,
                        fill=STONE_TOP, width=max(1, size // 16))
     _bevel(canvas, x, y, size, STONE_FACE_HI, STONE_SIDE)
+    _gleam(canvas, x, y, size)
 
 
 def draw_stone_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
@@ -922,6 +1216,7 @@ def draw_seal_wall(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = Fa
         canvas.create_text(x + size // 2, y + size // 2, text="🔒",
                            font=("Arial", max(8, size // 3)), anchor="center")
     _bevel(canvas, x, y, size, "#a78bfa", "#2a1a5a")
+    _glow(canvas, x + size // 2, y + size // 2, size // 2, SEAL_PURPLE)
 
 
 def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
@@ -961,15 +1256,24 @@ def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     if size >= 24:
         canvas.create_text(cx, cy, text="🌀",
                            font=("Arial", max(8, size // 3)), anchor="center")
+    # faint static halo; the animated vortex lives in draw_warp_fx
+    _glow(canvas, cx, cy, outer, WARP_INDIGO, layers=2)
 
 
 def draw_mine(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
     """Visible land mine — pixel bomb from assets/boom.jpeg.
 
     Without Pillow / the asset / a Tk root, falls back to the red
-    danger marker so tests stay headless-safe.
+    danger marker so tests stay headless-safe.  The fuse stem is part
+    of the static body; the sputtering spark is drawn by draw_mine_fx.
     """
     draw_floor(canvas, x, y, size, fast=fast)
+    # fuse stem arcing out of the bomb top toward the spark tip
+    _tx, _ty = _mine_fuse_tip(x, y, size)
+    _bx, _by = x + size // 2 + 2, y + int(size * 0.30)
+    canvas.create_line(_bx, _by, (_bx + _tx) // 2, (_by + _ty) // 2 - 1,
+                       _tx, _ty, fill="#7a4f2a",
+                       width=max(2, size // 16), smooth=True)
     # Photo first in both modes (see draw_door_closed).
     photo = None
     try:
@@ -1218,6 +1522,67 @@ def _boom_photo(size: int):
     return photo
 
 
+# ── player photo support (assets/player.png, near-white background) ─
+PLAYER_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "assets", "player.png")
+_player_src = None        # cached RGBA PIL image, or False when unavailable
+_player_photos: dict = {}  # (quant-size, sharp) -> PhotoImage
+
+
+def _load_player_src():
+    """Load the knight sprite keyed to RGBA (near-white -> transparent).
+
+    Returns a PIL RGBA image, or None when Pillow / the file is missing.
+    The result (including the miss) is cached.
+    """
+    global _player_src
+    if _player_src is not None:
+        return _player_src or None
+    if not _PIL_AVAILABLE:
+        _player_src = False
+        return None
+    try:
+        img = _PILImage.open(PLAYER_IMAGE).convert("RGB")
+    except (OSError, FileNotFoundError):
+        _player_src = False
+        return None
+    gray = img.convert("L")
+    content = gray.point(lambda v: 0 if v > 235 else 255)
+    bbox = content.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+        gray = gray.crop(bbox)
+    # soft alpha ramp so anti-aliased edges blend instead of clipping
+    alpha = gray.point(
+        lambda v: 0 if v >= 245 else (255 if v <= 190 else int((245 - v) * 255 / 55)))
+    img = img.convert("RGBA")
+    img.putalpha(alpha)
+    _player_src = img
+    return img
+
+
+def _player_photo(size: int, sharp: bool = False):
+    """PhotoImage of the knight fitted into a `size`px cell (cached).
+
+    `sharp` uses NEAREST scaling so pixel art stays crisp when shown
+    large (menus); the game default stays BILINEAR for smooth minifying.
+    """
+    _check_photo_root()
+    key = (_quant_size(size), bool(sharp))
+    if key in _player_photos:
+        return _player_photos[key]
+    src = _load_player_src()
+    if src is None:
+        return None
+    side = max(8, int(key[0] * 0.92))
+    fit = src.copy()
+    filt = _PILImage.NEAREST if sharp else _PILImage.BILINEAR
+    fit.thumbnail((side, side), filt)
+    photo = _PILImageTk.PhotoImage(fit)
+    _player_photos[key] = photo
+    return photo
+
+
 # ── laser-gate photo support (assets/laser.png, transparent) ─────────
 LASER_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "assets", "laser.png")
@@ -1297,6 +1662,7 @@ def draw_laser(canvas: tk.Canvas, x: int, y: int, size: int,
                                 fill="#e34b3e", outline="")
         return
     # Procedural fallback: grey emitter bars + 4 red beams w/ white core.
+    _glow(canvas, x + size // 2, y + size // 2, size // 2, "#e34b3e")
     m = max(2, size // 10)
     cap_h = max(3, size // 6)
     canvas.create_rectangle(x + 1, y + 1, x + size - 1, y + 1 + cap_h,
@@ -1694,6 +2060,7 @@ def draw_lever(canvas: tk.Canvas, x: int, y: int, size: int,
                             width=max(1, size // 20))
     canvas.create_rectangle(x + m, base_y0, x + size - m, base_y0 + max(2, size // 12),
                             fill="#9aa0bd", outline="")
+    _gleam(canvas, x, y, size)
     # rod
     rod_w = max(2, size // 12)
     if not active:

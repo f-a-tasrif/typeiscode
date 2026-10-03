@@ -187,7 +187,7 @@ class LobbyHost:
 
     # -- race ("I'm faster than you") ---------------------------------
     def start_race(self, duration_s: int = RACE_DURATION_S) -> dict:
-        """Begin the 15-minute roster race for everyone in the lobby."""
+        """Begin the 10-minute roster race for everyone in the lobby."""
         self.race_duration_s = duration_s
         with self._lock:
             self.race = {name: RacerStats(name=name)

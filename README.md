@@ -13,6 +13,7 @@ python3 main.py                 # start at level 1
 python3 main.py --level 8       # start directly at level 8
 python3 main.py -l 5            # short form
 python3 main.py --list          # list available levels
+python3 main.py --renderer panda  # Phase-1 3D graybox (needs: pip install panda3d)
 ```
 
 ## Controls

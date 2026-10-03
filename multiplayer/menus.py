@@ -35,7 +35,7 @@ ACCENT = "#8aa2ff"
 
 
 class MenuApp:
-    def __init__(self, on_play, on_race=None):
+    def __init__(self, on_play, on_race=None, start="home"):
         import tkinter as tk
         from tkinter import messagebox
         self.tk = tk
@@ -54,6 +54,9 @@ class MenuApp:
         self.poll_job = None
         self.discovered = []
         self.show_home()
+        if start == "multiplayer":
+            # Entered from the animated menu's MULTIPLAYER option.
+            self.show_multiplayer()
 
     # -- frame helpers ------------------------------------------------
     def _leave_net(self):
@@ -504,11 +507,21 @@ class MenuApp:
         self.root.mainloop()
 
 
-def run_menus(on_play, on_race=None):
+def run_menus(on_play, on_race=None, animated=True):
     """Open the home menu window (blocking).
 
     `on_play` starts the solo game; `on_race(role, net, name, duration_s)`
-    starts a LAN race (role "host"/"client").
+    starts a LAN race (role "host"/"client").  The animated cover-art
+    menu is the default; pass animated=False for the classic menu.
     """
+    if animated:
+        from menu_scene import run_animated_menu
+
+        def _to_multiplayer():
+            MenuApp(on_play, on_race=on_race, start="multiplayer").run()
+
+        run_animated_menu(on_new_game=on_play,
+                          on_multiplayer=_to_multiplayer)
+        return
     app = MenuApp(on_play, on_race=on_race)
     app.run()
