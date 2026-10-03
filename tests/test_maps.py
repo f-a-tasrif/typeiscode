@@ -28,11 +28,10 @@ from levels_data import _build_from_map  # noqa: E402
 DIRS = {"U": "w", "D": "s", "L": "a", "R": "d"}
 
 # (level_no, after_phase_index, class, prop, expected): registry spot-checks
-# run mid-replay. Phase indices are 0-based.
+# run mid-replay. Phase indices are 0-based. Keys are ALL_LEVELS numbers.
 PHASE_CHECKS = {
-    5: [(0, "Platform", "isSolid", True), (5, "Trap", "isLethal", False)],
-    6: [(0, "Platform", "isSolid", True)],
-    8: [(3, "Platform", "isSolid", True)],
+    3: [(0, "Platform", "isSolid", True)],
+    10: [(3, "Platform", "isSolid", True)],
 }
 
 
@@ -119,13 +118,15 @@ if __name__ == "__main__":
     failed = 0
     xfailed = 0
     ran = 0
-    # MAPS[0] has no level (old level 5 was deleted); levels 5-8 use MAPS[1:].
-    # Levels are built via their ALL_LEVELS builders so builder tweaks apply.
+    # MAPS[0] has no level (old level 5 was deleted); levels are built via
+    # their ALL_LEVELS builders so builder tweaks apply.
     # Explicit builder mapping (independent of ALL_LEVELS order).
-    from levels_data import build_level5, build_level6, build_level7, build_level8
-    builders = [build_level5, build_level6, build_level7, build_level8]
-    entries = [(5 + i, builder, entry)
-               for i, (builder, entry) in enumerate(zip(builders, MAPS[1:]))]
+    # Numbers are ALL_LEVELS positions: 3=build_level6, 4=build_level7,
+    # 10=build_level8 (levels 2, 3, 5 were deleted).
+    from levels_data import build_level6, build_level7, build_level8
+    entries = [(3, build_level6, MAPS[2]),
+               (4, build_level7, MAPS[3]),
+               (10, build_level8, MAPS[4])]
     for level_no, builder, entry in entries:
         if only and level_no not in only:
             continue

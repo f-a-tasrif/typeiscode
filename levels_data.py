@@ -237,93 +237,11 @@ def build_level1() -> Level:
     return lvl
 
 
-def build_level2() -> Level:
-    
-    W, H = 16, 7
-    lvl = Level("2", W, H, DEFAULT_REGISTRY)
-    lvl.add_wall_border()
-    lvl.set_player(1, 5)
-    lvl.set_goal(14, 5)
-
-    for x in range(1, W - 1):
-        if x != 2:
-            lvl.add_wall(x, 4)
-
-    lvl.add_object(Door(9, 5))
-
-    slots = [(4, 2), (5, 2), (6, 2), (7, 2)]
-    lvl.add_circuit(CircuitLine("Door Statement", slots))
-    lvl.add_object(CodeBlock(4, 2, CLASS, "Door"))
-    lvl.add_object(CodeBlock(5, 2, PROP, "isOpen"))
-    lvl.add_object(CodeBlock(6, 2, OP, "="))
-    lvl.add_object(CodeBlock(7, 2, VALUE, False))  # wrong -- needs to be True
-
-    lvl.add_object(CodeBlock(9, 2, VALUE, True))  # spare correction block, kept separate
-
-    lvl.recompile_circuits()
-    return lvl
-
-
-def build_level3() -> Level:
-    
-    W, H = 28, 7
-    lvl = Level("3", W, H, DEFAULT_REGISTRY)
-    lvl.add_wall_border()
-    lvl.set_player(1, 5)
-    lvl.set_goal(26, 5)
-
-    doorA, doorB = 2, 14
-    obstacleA, obstacleB = 8, 20
-
-    # row 4: only two doorways, each strictly before its own obstacle
-    for x in range(1, W - 1):
-        if x not in (doorA, doorB):
-            lvl.add_wall(x, 4)
-
-    # dividing wall between workshop rooms
-    for y in range(1, 4):
-        lvl.add_wall(12, y)
-
-    lvl.add_object(Trap(obstacleA, 5))
-    lvl.add_object(Platform(obstacleB, 5))
-
-    # Trap circuit in workshop A
-    slotsA = [(4, 2), (5, 2), (6, 2), (7, 2)]
-    circA = CircuitLine("Trap Statement", slotsA)
-    lvl.add_circuit(circA)
-    lvl.add_object(CodeBlock(4, 2, CLASS, "Trap"))
-    lvl.add_object(CodeBlock(5, 2, PROP, "isLethal"))
-    lvl.add_object(CodeBlock(6, 2, OP, "="))
-    lvl.add_object(CodeBlock(7, 2, VALUE, True))    # wrong -- needs False
-    lvl.add_object(CodeBlock(9, 2, VALUE, False))   # spare correction block
-
-    # Bridge circuit in workshop B
-    slotsB = [(16, 2), (17, 2), (18, 2), (19, 2)]
-    circB = CircuitLine("Bridge Statement", slotsB)
-    lvl.add_circuit(circB)
-    lvl.add_object(CodeBlock(16, 2, CLASS, "Platform"))
-    lvl.add_object(CodeBlock(17, 2, PROP, "isSolid"))
-    lvl.add_object(CodeBlock(18, 2, OP, "="))
-    lvl.add_object(CodeBlock(19, 2, VALUE, False))  # the path ahead is a void -- needs True
-    lvl.add_object(CodeBlock(21, 2, VALUE, True))   # spare correction block
-
-    lvl.recompile_circuits()
-    return lvl
-
-
 def build_level4() -> Level:
     
     e = MAPS[3]
     return _build_from_map("4",
                            e["rows"], e["start"], e["tokens"])
-
-
-def build_level5() -> Level:
-    e = MAPS[1]
-    lvl = _build_from_map("5",
-                          e["rows"], e["start"], e["tokens"])
-    _flip_value_block(lvl, e, "False")
-    return lvl
 
 
 def build_level6() -> Level:
@@ -457,7 +375,7 @@ def build_level13() -> Level:
                            beacon2=e.get("f2"))
 
 
-ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4,
-              build_level5, build_level6, build_level7, build_level9,
+ALL_LEVELS = [build_level1, build_level4,
+              build_level6, build_level7, build_level9,
               build_level10, build_level11, build_level12, build_level13,
               build_level8]

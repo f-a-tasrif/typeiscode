@@ -32,6 +32,7 @@ from .protocol import (
     new_lobby_id,
     valid_gamemode,
 )
+from .race import RACE_DURATION_S, RacerStats, compute_standings
 
 
 @dataclass
@@ -70,6 +71,9 @@ class LobbyHost:
         self.lobby_id = new_lobby_id()
         self.players: list[str] = [self.host_name]
         self.started = False
+        self.race_active = False
+        self.race: dict[str, RacerStats] = {}
+        self.race_duration_s = RACE_DURATION_S
         self.events: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
         self._clients: list = []  # (socket, file, name)
@@ -123,6 +127,55 @@ class LobbyHost:
         self.events.put(("started", msg))
         return msg
 
+    # -- race ("I'm faster than you") ---------------------------------
+    def start_race(self, duration_s: int = RACE_DURATION_S) -> dict:
+        """Begin the 15-minute roster race for everyone in the lobby."""
+        self.race_duration_s = duration_s
+        with self._lock:
+            self.race = {name: RacerStats(name=name)
+                         for name in self.players}
+        self.race_active = True
+        self.started = True
+        msg = {"type": "race_start", "lobby_id": self.lobby_id,
+               "gamemode": self.gamemode, "duration_s": duration_s}
+        self._broadcast(msg)
+        self.events.put(("race_start", msg))
+        self._race_board()
+        return msg
+
+    def race_update(self, name: str, levels: int, moves: int,
+                    restarts: int):
+        """Record one racer's progress (host's own engine calls this)."""
+        with self._lock:
+            entry = self.race.get(name)
+            if entry is None:
+                entry = RacerStats(name=name)
+                self.race[name] = entry
+            entry.levels = levels
+            entry.moves = moves
+            entry.restarts = restarts
+        self._race_board()
+
+    def _race_board(self):
+        with self._lock:
+            standings = compute_standings(self.race)
+        self._broadcast({
+            "type": "race_board",
+            "lobby_id": self.lobby_id,
+            "standings": [s.__dict__ for s in standings],
+        })
+
+    def end_race(self) -> dict:
+        """Broadcast final standings when the timer expires."""
+        with self._lock:
+            standings = compute_standings(self.race)
+        self.race_active = False
+        msg = {"type": "race_end", "lobby_id": self.lobby_id,
+               "standings": [s.__dict__ for s in standings]}
+        self._broadcast(msg)
+        self.events.put(("race_end", msg))
+        return msg
+
     def _broadcast(self, obj: dict):
         raw = encode_msg(obj)
         with self._lock:
@@ -165,6 +218,11 @@ class LobbyHost:
                 return
             name = str(hello.get("name", "")).strip()[:24] or "Player"
             with self._lock:
+                if self.race_active:
+                    conn.sendall(encode_msg({"type": "error",
+                                             "message": "race in progress"}))
+                    conn.close()
+                    return
                 if len(self.players) >= self.max_players:
                     conn.sendall(encode_msg({"type": "error",
                                              "message": "lobby full"}))
@@ -193,6 +251,18 @@ class LobbyHost:
                     break
                 if msg.get("type") == "leave":
                     break
+                if msg.get("type") == "race_progress":
+                    try:
+                        self.race_update(
+                            name,
+                            int(msg.get("levels", 0)),
+                            int(msg.get("moves", 0)),
+                            int(msg.get("restarts", 0)))
+                    except Exception:
+                        pass
+                    self.events.put(("race_progress", {"name": name,
+                                                       **msg}))
+                    continue
                 # Unknown chat/ping messages are ignored for now.
             with self._lock:
                 if name in self.players:
@@ -381,6 +451,21 @@ class LobbyClient:
         except Exception:
             pass
         self._sock = None
+
+    def send_progress(self, levels: int, moves: int, restarts: int):
+        """Report race progress to the host (no-op when disconnected)."""
+        if self._sock is None:
+            return
+        try:
+            self._sock.sendall(encode_msg({
+                "type": "race_progress",
+                "lobby_id": self.lobby_id,
+                "levels": int(levels),
+                "moves": int(moves),
+                "restarts": int(restarts),
+            }))
+        except Exception:
+            pass
 
     def _listen_loop(self, f):
         while self._running:

@@ -24,9 +24,12 @@ from tile_renderer import (
     draw_code_block,
     draw_stone,
     draw_laser, draw_lever,
+    draw_latch_closed, draw_latch_open,
     draw_seal_wall, draw_warp, draw_mine,
     get_canvas_photo, get_panel_photo, get_panel_slice,
 )
+from multiplayer.race import (Standing, compute_standings, fmt_time,
+                              board_lines)
 
 # ── colour tokens (info-panel only) ─────────────────────────────────
 BACKGROUND     = "#0f1323"
@@ -64,8 +67,8 @@ CAM_ZOOM_MAX   = 2.0
 
 # ── per-level hints (HINTS panel) ───────────────────────────────────
 # One entry per level in ALL_LEVELS, index-aligned with level_index.
-# Only level 8 carries hint text; all other entries are blank and the
-# HINTS section stays hidden on those levels.
+# Only the beacon level and the final level carry hint text; all other
+# entries are blank and the HINTS section stays hidden on those levels.
 LEVEL_HINTS = [
 "",
 
@@ -82,12 +85,6 @@ LEVEL_HINTS = [
 "",
 
 "",
-
-"",
-
- "",
-
-    "",
 
 "The shadows fall across the night,\n"
     "And wrap the weary in their might,\n"
@@ -114,13 +111,27 @@ HELP_PANEL_TEXT = (
 
 class GUIEngine:
     # ── construction ────────────────────────────────────────────────
-    def __init__(self, start_index: int = 0):
+    def __init__(self, start_index: int = 0, race=None):
+        """`race` (optional) = {"role","net","name","duration_s"} for LAN races."""
         if not 0 <= start_index < len(ALL_LEVELS):
             raise ValueError(f"Invalid start_index {start_index}. Choose 0-{len(ALL_LEVELS) - 1}.")
         self.level_index = start_index
         self.game_completed = False
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
+        # race state (None in solo play)
+        self.race = race
+        self._race_over = False
+        self._race_time_up = False
+        self._race_job = None
+        self._race_levels = 0
+        self._race_moves = 0
+        self._race_restarts = 0
+        self._race_standings: list[Standing] = []
+        self._race_ends_at: float | None = None
+        if race is not None:
+            import time as _time
+            self._race_ends_at = _time.time() + float(race.get("duration_s", 900))
         self._last_message = ""
         self._show_warps = True
         self._label_photos: dict[str, object] = {}
@@ -158,6 +169,9 @@ class GUIEngine:
 
         # initial render (deferred so geometry is settled)
         self.window.root.after(50, lambda: self.render_frame(self._last_message))
+        if self.race is not None:
+            self._race_report()
+            self.window.root.after(500, self._race_tick)
 
     def _build_info_panel(self):
         self.info_frame = self.window.create_frame(width=430)
@@ -166,6 +180,16 @@ class GUIEngine:
             wraplength=405)
         self.moves_label = self.info_frame.add_label(
             "", font=("Consolas", 13), fg=TEXT_DIM, bg=PANEL_BG)
+        self.race_title = self.info_frame.add_label(
+            "", font=("Consolas", 14, "bold"), fg=ACCENT, bg=PANEL_BG)
+        self.race_view = self.info_frame.add_text_view(
+            width=44, height=9, font=("Consolas", 11),
+            fg=TEXT_BODY, bg=PANEL_SECTION)
+        self.race_title.pack_forget()
+        try:
+            self.race_view._text.pack_forget()
+        except Exception:
+            pass
         self.message_label = self.info_frame.add_label(
             "", font=("Consolas", 12, "italic"), fg=TEXT_BODY, bg=PANEL_BG,
             wraplength=405)
@@ -210,6 +234,149 @@ class GUIEngine:
         self.level.reset()
         self._snap_camera_to_player()
         return True
+
+    # ── LAN race ("I'm faster than you") ────────────────────────────
+    def _race_is_host(self) -> bool:
+        return self.race is not None and self.race.get("role") == "host"
+
+    def _race_report(self):
+        """Push our totals to the host (client) or the board (host)."""
+        if self.race is None:
+            return
+        try:
+            if self._race_is_host():
+                self.race["net"].race_update(
+                    self.race.get("name", "Host"),
+                    self._race_levels, self._race_moves, self._race_restarts)
+                self._race_refresh_from_host()
+            else:
+                self.race["net"].send_progress(
+                    self._race_levels, self._race_moves, self._race_restarts)
+        except Exception:
+            pass
+
+    def _race_refresh_from_host(self):
+        try:
+            self._race_standings = compute_standings(
+                self.race["net"].race)
+        except Exception:
+            pass
+
+    def _race_text(self) -> str:
+        if self._race_over:
+            head = "FINAL STANDINGS"
+        elif self._race_time_up:
+            head = "TIME! Waiting for host results..."
+        else:
+            head = "Live standings"
+        lines = [head] + board_lines(self._race_standings)
+        if not self._race_standings:
+            lines.append("(waiting for racers...)")
+        lines.append("Score = Lv*10000 - restarts*100 - steps")
+        return "\n".join(lines)
+
+    def _cancel_race_tick(self):
+        job, self._race_job = self._race_job, None
+        if job is not None:
+            try:
+                self.window.root.after_cancel(job)
+            except Exception:
+                pass
+
+    def _race_drain_events(self) -> bool:
+        """Absorb pending lobby messages. Returns True when UI should refresh."""
+        if self.race is None:
+            return False
+        net = self.race.get("net")
+        changed = False
+        if self._race_is_host():
+            try:
+                while True:
+                    try:
+                        kind, _payload = net.events.get_nowait()
+                    except Exception:
+                        break
+                    if kind in ("join", "leave", "race_progress"):
+                        changed = True
+                    elif kind == "race_end":
+                        try:
+                            rows = _payload.get("standings", [])
+                            self._race_standings = [Standing(**r) for r in rows]
+                        except Exception:
+                            pass
+                        self._race_over = True
+                        changed = True
+            except Exception:
+                pass
+            if changed and not self._race_over:
+                self._race_refresh_from_host()
+            return changed
+        try:
+            while True:
+                try:
+                    kind, payload = net.events.get_nowait()
+                except Exception:
+                    break
+                if kind == "race_board":
+                    try:
+                        rows = payload.get("standings", []) if isinstance(payload, dict) else []
+                        self._race_standings = [Standing(**r) for r in rows]
+                    except Exception:
+                        pass
+                    changed = True
+                elif kind == "race_end":
+                    try:
+                        rows = payload.get("standings", []) if isinstance(payload, dict) else []
+                        self._race_standings = [Standing(**r) for r in rows]
+                    except Exception:
+                        pass
+                    self._race_over = True
+                    self._race_time_up = False
+                    changed = True
+                elif kind == "disconnected":
+                    self._last_message = "Lost connection to host."
+                    changed = True
+        except Exception:
+            pass
+        return changed
+
+    def _race_tick(self):
+        """500ms race ticker: standings, countdown clock, host time-up."""
+        self._race_job = None
+        if self.race is None:
+            return
+        try:
+            import time as _time
+            changed = self._race_drain_events()
+            now = _time.time()
+            if not self._race_over and self._race_ends_at is not None \
+                    and now >= self._race_ends_at:
+                if self._race_is_host():
+                    self._race_report()
+                    try:
+                        self.race["net"].end_race()
+                    except Exception:
+                        pass
+                    changed = self._race_drain_events() or changed
+                else:
+                    self._race_time_up = True
+                    changed = True
+            try:
+                if self._race_over:
+                    self.race_title.configure(text="RACE OVER")
+                elif self._race_time_up:
+                    self.race_title.configure(text="TIME! 00:00")
+                else:
+                    self.race_title.configure(
+                        text="RACE  %s left" % fmt_time(self._race_ends_at - now))
+            except Exception:
+                pass
+            if changed:
+                self.render_frame(self._last_message)
+            self._race_job = self.window.root.after(500, self._race_tick)
+        except Exception:
+            # Window destroyed mid-tick: stop quietly.
+            self._race_job = None
 
     # ── responsive resize ───────────────────────────────────────────
     def _on_resize(self, w: int, h: int):
@@ -673,9 +840,9 @@ class GUIEngine:
                         draw_wall(raw, px, py, cell, fast=fast)
                     elif tcls == "LatchDoor":
                         if terr.is_blocking():
-                            draw_door_closed(raw, px, py, cell, fast=fast)
+                            draw_latch_closed(raw, px, py, cell, fast=fast)
                         else:
-                            draw_door_open(raw, px, py, cell, fast=fast)
+                            draw_latch_open(raw, px, py, cell, fast=fast)
                     elif tcls == "LaserDoor":
                         if terr.is_blocking():
                             draw_laser(raw, px, py, cell, active=True, fast=fast)
@@ -806,9 +973,9 @@ class GUIEngine:
                             draw_wall(raw, px, py, cell, fast=fast)
                         elif cls == "LatchDoor":
                             if occ.is_blocking():
-                                draw_door_closed(raw, px, py, cell, fast=fast)
+                                draw_latch_closed(raw, px, py, cell, fast=fast)
                             else:
-                                draw_door_open(raw, px, py, cell, fast=fast)
+                                draw_latch_open(raw, px, py, cell, fast=fast)
                         elif cls == "LaserDoor":
                             draw_laser(raw, px, py, cell, active=bool(occ.is_blocking()), fast=fast)
                         elif cls == "Warp":
@@ -840,8 +1007,10 @@ class GUIEngine:
             return
         press = getattr(self.level, "fusion_press_count", 0)
         hint = LEVEL_HINTS[self.level_index] if 0 <= self.level_index < len(LEVEL_HINTS) else ""
+        race_text = self._race_text() if self.race is not None else ""
         panel_key = (self.level_index, self.level.moves, self._last_message,
-                     press, self.game_completed, hint)
+                     press, self.game_completed, hint, race_text,
+                     self._race_over, self._race_time_up)
         panel_dirty = (panel_key != self._panel_cache)
         if panel_dirty:
             self._panel_cache = panel_key
@@ -856,6 +1025,26 @@ class GUIEngine:
                     fg=TEXT_COLOR)
 
             self.moves_label.configure(text=f"Moves: {self.level.moves}")
+            if self.race is not None:
+                import time as _time3
+                if self._race_over:
+                    self.race_title.configure(text="RACE OVER")
+                elif self._race_time_up:
+                    self.race_title.configure(text="TIME! 00:00")
+                elif self._race_ends_at is not None:
+                    self.race_title.configure(
+                        text="RACE  %s left" % fmt_time(self._race_ends_at - _time3.time()))
+                if not self.race_title.winfo_ismapped():
+                    self.race_title.pack(fill="x", padx=12, pady=5, anchor="nw")
+                if not self.race_view._text.winfo_ismapped():
+                    self.race_view._text.pack(fill="x", padx=12, pady=4, anchor="nw")
+                self.race_view.set_text(race_text)
+            else:
+                self.race_title.pack_forget()
+                try:
+                    self.race_view._text.pack_forget()
+                except Exception:
+                    pass
             # Game feedback message — previously stored but never shown.
             if self._last_message:
                 msg_fg = DANGER_COLOR if self.level.dead else TEXT_BODY
@@ -955,6 +1144,15 @@ class GUIEngine:
 
         if key == "q":
             self._cancel_camera_anim()
+            self._cancel_race_tick()
+            if self.race is not None:
+                try:
+                    if self._race_is_host():
+                        self.race["net"].stop()
+                    else:
+                        self.race["net"].leave()
+                except Exception:
+                    pass
             self.window.root.destroy()
             return
         if key == "h":
@@ -962,7 +1160,13 @@ class GUIEngine:
             return
         if key == "r":
             from_start = self.game_completed
+            if self.race is not None and self.game_completed:
+                self.render_frame("Roster complete! Waiting for the clock.")
+                return
             self.restart_level(from_start=from_start)
+            if self.race is not None:
+                self._race_restarts += 1
+                self._race_report()
             msg = "Game restarted from Level 1." if from_start else "Level restarted."
             self.render_frame(msg)
             return
@@ -994,12 +1198,26 @@ class GUIEngine:
 
         # block movement after game completion
         if self.game_completed:
-            self.render_frame(
-                "All levels complete!  Press R to restart from Level 1, or Q to quit.")
+            if self.race is not None:
+                self.render_frame("Roster complete! Waiting for the clock.")
+            else:
+                self.render_frame(
+                    "All levels complete!  Press R to restart from Level 1, or Q to quit.")
+            return
+        if self.race is not None and (self._race_over or self._race_time_up):
+            self.render_frame("Race over! Waiting for final standings." if self._race_over
+                              else "Time! Waiting for host results.")
             return
 
+        m0 = self.level.moves
         msg = self.level.move_player(key)
+        if self.race is not None and self.level.moves > m0:
+            self._race_moves += self.level.moves - m0
+            self._race_report()
         if self.level.won:
+            if self.race is not None:
+                self._race_levels += 1
+                self._race_report()
             if not self.next_level():
                 self.render_frame(
                     "🎉 Congratulations!  You compiled your way through every level!  "

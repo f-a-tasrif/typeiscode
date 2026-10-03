@@ -36,12 +36,13 @@ ACCENT = "#8aa2ff"
 
 
 class MenuApp:
-    def __init__(self, on_play):
+    def __init__(self, on_play, on_race=None):
         import tkinter as tk
         from tkinter import messagebox
         self.tk = tk
         self.messagebox = messagebox
         self.on_play = on_play
+        self.on_race = on_race
         self.root = tk.Tk()
         self.root.title("Type Is Code")
         self.root.configure(bg=BG)
@@ -341,10 +342,19 @@ class MenuApp:
 
         if is_host:
             refresh_players(host.players)
-            status.configure(text="Guests on the same network can discover + join. "
-                                  "Press Start when ready.")
-            self._btn(f, "▶  Start Game", lambda: self._do_start(status)).pack(
-                fill="x", pady=6)
+            if host.gamemode == FASTER_MODE:
+                from .race import fmt_time, RACE_DURATION_S
+                status.configure(
+                    text="Guests on the same network can discover + join. "
+                         "Press Start Race when ready -- %s on the clock."
+                         % fmt_time(RACE_DURATION_S))
+                self._btn(f, "Start Race", self._do_start_race).pack(
+                    fill="x", pady=6)
+            else:
+                status.configure(text="Guests on the same network can discover + join. "
+                                      "Press Start when ready.")
+                self._btn(f, "▶  Start Game", lambda: self._do_start(status)).pack(
+                    fill="x", pady=6)
         else:
             refresh_players(client.players)
             status.configure(text="Waiting for host to start…")
@@ -401,6 +411,9 @@ class MenuApp:
                                 "Game started",
                                 note or "Host started the game. "
                                        "Gamemode logic coming soon — lobby stays open.")
+                        elif kind == "race_start":
+                            self._begin_race("client")
+                            return
                         elif kind == "disconnected":
                             status.configure(text="Disconnected from host.")
                             return
@@ -409,6 +422,37 @@ class MenuApp:
                 pass
             self.poll_job = self.root.after(400, poll)
         poll()
+
+    def _do_start_race(self):
+        from .race import RACE_DURATION_S
+        try:
+            self.host.start_race(duration_s=RACE_DURATION_S)
+        except Exception as exc:
+            self.messagebox.showerror("Start Race", f"Could not start:\n{exc}")
+            return
+        self._begin_race("host")
+
+    def _begin_race(self, role):
+        """Leave the menu (keeping the lobby connection) and start racing."""
+        if self.on_race is None:
+            self.messagebox.showerror("Race", "Race launcher is not wired up.")
+            return
+        from .race import RACE_DURATION_S
+        net = self.host if role == "host" else self.client
+        name = (self.host.host_name if role == "host" and self.host is not None
+                else self.client.you if self.client is not None else "Player")
+        duration = (self.host.race_duration_s
+                    if role == "host" and self.host is not None
+                    else RACE_DURATION_S)
+        launch = self.on_race
+        self._stop_poll()
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+        self.host = None
+        self.client = None
+        launch(role, net, name, duration)
 
     def _do_start(self, status_label):
         try:
@@ -433,7 +477,11 @@ class MenuApp:
         self.root.mainloop()
 
 
-def run_menus(on_play):
-    """Open the home menu window (blocking). `on_play` starts solo game."""
-    app = MenuApp(on_play)
+def run_menus(on_play, on_race=None):
+    """Open the home menu window (blocking).
+
+    `on_play` starts the solo game; `on_race(role, net, name, duration_s)`
+    starts a LAN race (role "host"/"client").
+    """
+    app = MenuApp(on_play, on_race=on_race)
     app.run()

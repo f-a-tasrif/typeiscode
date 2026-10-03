@@ -47,7 +47,7 @@ _GLYPHS = {
     ("CLASS", "Lever2"): "Lev2",
     ("CLASS", "Lever3"): "Lev3",
     ("CLASS", "Lever4"): "Lev4",
-    ("CLASS", "Beacon"): "Beac",
+    ("CLASS", "Beacon"): "Beacon",
     ("CLASS", "Latch"): "Latch",
     ("CLASS", "Laser"): "Laser",
     ("CLASS", "Gate"): "Gate.",

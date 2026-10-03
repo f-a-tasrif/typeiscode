@@ -48,6 +48,10 @@ def _check_photo_root():
             _trap_tk_photos.clear()
         except NameError:
             pass
+        try:
+            _latch_photos.clear()
+        except NameError:
+            pass
         _skel_photos.clear()
         _lever_photos.clear()
         _panel_photos.clear()
@@ -594,6 +598,136 @@ def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = Fa
     # frame top bar
     canvas.create_rectangle(x + m - 1, y + m - 1, x + size - m + 1, y + m + max(2, size // 10),
                             fill="#c89040", outline="#a07030")
+
+
+# ── padlock photo support (assets/latch.webp, white background) ──
+LATCH_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "assets", "latch.webp")
+_latch_src = None         # cached RGBA PIL image, or False when unavailable
+_latch_photos: dict[int, object] = {}  # cell size -> PhotoImage
+
+
+def _load_latch_src():
+    """Load the padlock art keyed to RGBA (cached, incl. the miss)."""
+    global _latch_src
+    if _latch_src is not None:
+        return _latch_src or None
+    _latch_src = _white_keyed_src(LATCH_IMAGE) or False
+    return _latch_src or None
+
+
+def _latch_photo(size: int):
+    """PhotoImage of the padlock fitted into a `size`px cell (cached)."""
+    _check_photo_root()
+    key = _quant_size(size)
+    if key in _latch_photos:
+        return _latch_photos[key]
+    src = _load_latch_src()
+    if src is None:
+        return None
+    side = max(8, int(key * 0.92))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
+    photo = _PILImageTk.PhotoImage(fit)
+    _latch_photos[key] = photo
+    return photo
+
+
+# ── latch-door art (pink, trap-styled) ──────────────────────────────
+# The LatchDoor used to borrow the wooden-door art, making it identical
+# to a normal Door.  It gets its own pink design with a digital-rain
+# latch plate tying it to the trap family.
+LATCH_BASE   = "#c44a8c"
+LATCH_FRAME  = "#7a2a58"
+LATCH_HI     = "#f2a4cc"
+LATCH_SHADOW = "#4a1030"
+LATCH_OPEN_CLR = "#e89ac0"
+LATCH_OPEN_GAP = "#3a1a2e"
+
+
+def draw_latch_closed(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
+    """Closed latch door — gold padlock from assets/latch.webp, else pink."""
+    # Photo first in both modes (see draw_door_closed).
+    photo = None
+    try:
+        photo = _latch_photo(size)
+    except Exception:
+        photo = None
+    if photo is not None:
+        draw_floor(canvas, x, y, size, fast=fast)
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
+    if fast:
+        m = max(2, size // 7)
+        canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
+                                fill=LATCH_BASE, outline=LATCH_FRAME, width=1)
+        return
+    canvas.create_rectangle(x, y, x + size, y + size,
+                            fill="#1b1f3f", outline="#242850", width=1)
+    _bevel(canvas, x, y, size, FLOOR_SHADOW, FLOOR_HI,
+           depth=max(1, size // 14))
+    m = max(2, size // 7)
+    # pink door body
+    canvas.create_rectangle(x + m, y + m, x + size - m, y + size - m,
+                            fill=LATCH_BASE, outline=LATCH_FRAME,
+                            width=max(1, size // 16))
+    # frame top bar
+    canvas.create_rectangle(x + m - 1, y + m - 1, x + size - m + 1, y + m + max(2, size // 10),
+                            fill=LATCH_FRAME, outline=LATCH_FRAME)
+    # rain-textured latch plate (vertical inset strip, trap greens)
+    pw = max(3, size // 5)
+    px1 = x + size // 2 - pw // 2
+    canvas.create_rectangle(px1, y + m + max(2, size // 10),
+                            px1 + pw, y + size - m,
+                            fill="#0d2a12", outline="#2a5a30", width=1)
+    import random as _rand
+    _rng = _rand.Random(1234)
+    for _ in range(max(4, size // 3)):
+        gx = _rng.randint(px1 + 1, px1 + pw - 1)
+        gy = _rng.randint(y + m + 2, y + size - m - 2)
+        g = _rng.choice(("#0ac11b", "#4ae35a", "#087a12"))
+        canvas.create_rectangle(gx, gy, gx + 1, gy + 2, fill=g, outline="")
+    # keyhole + handle
+    cx = x + size // 2 + pw
+    cy = y + size // 2
+    kr = max(2, size // 10)
+    canvas.create_oval(cx - kr, cy - kr, cx + kr, cy + kr,
+                       fill="#1a1a1a", outline="#333")
+    hx = x + size - m - max(3, size // 6)
+    hr = max(2, size // 14)
+    canvas.create_oval(hx - hr, cy - hr, hx + hr, cy + hr,
+                       fill="#ffd080", outline="#cc9040")
+    _bevel(canvas, x + m, y + m, size - 2 * m, LATCH_HI, LATCH_SHADOW,
+           depth=max(1, size // 14))
+
+
+def draw_latch_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
+    """Open latch door — pink split panels revealing the passage."""
+    if fast:
+        canvas.create_rectangle(x, y, x + size, y + size,
+                                fill="#2a1420", outline="#4a2030", width=1)
+        return
+    canvas.create_rectangle(x, y, x + size, y + size,
+                            fill="#2a1420", outline="#4a2030", width=1)
+    _bevel(canvas, x, y, size, "#12060c", "#6a2a48",
+           depth=max(1, size // 14))
+    m = max(2, size // 7)
+    half = (size - 2 * m) // 2
+    # left panel (slightly ajar)
+    canvas.create_rectangle(x + m, y + m, x + m + half // 2, y + size - m,
+                            fill=LATCH_OPEN_CLR, outline="#a05880", width=1)
+    # right panel
+    canvas.create_rectangle(x + size - m - half // 2, y + m,
+                            x + size - m, y + size - m,
+                            fill=LATCH_OPEN_CLR, outline="#a05880", width=1)
+    # passage opening in the center
+    canvas.create_rectangle(x + m + half // 2, y + m,
+                            x + size - m - half // 2, y + size - m,
+                            fill=LATCH_OPEN_GAP, outline="#6a2a48", width=1)
+    # frame top bar
+    canvas.create_rectangle(x + m - 1, y + m - 1, x + size - m + 1, y + m + max(2, size // 10),
+                            fill="#a05880", outline="#7a2a58")
 
 
 def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):

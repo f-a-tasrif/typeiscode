@@ -95,20 +95,14 @@ brief:
 ## Levels
 
 1. **First Compile** — tutorial: seal the void in the path.
-2. **Open Sesame** — introduces Door; open it to pass.
-3. **Two Statements** — disarm a Trap, then seal a void, to
-   reach the goal.
-4. **Spacious Statements** — two tall workshops, a corridor whose GOAL is
+2. **Spacious Statements** — two tall workshops, a corridor whose GOAL is
    sealed behind a booby-trapped wall, and the token-fusion trick
    described below.
-5. **NOT Vault, Trap** — introduces `NOT`; seal the path with
-   `True`, free NOT from the vault to build
-   `Trap.lethal = NOT True` (False).
-6. **Serpentine Vault** — both rules use `NOT` (`NOT True` opens
+3. **Serpentine Vault** — both rules use `NOT` (`NOT True` opens
    the table gap, `NOT False` opens the door).
-7. **Swap the Values** — rules revert to defaults when a value
+4. **Swap the Values** — rules revert to defaults when a value
    leaves; arm the trap rule, then open the door.
-8. **Four Chambers, Three Gates** — the longest chain: `True`
+5. **Four Chambers, Three Gates** — the longest chain: `True`
    opens the door and seals the table, `NOT True` disarms the
    trap.
 

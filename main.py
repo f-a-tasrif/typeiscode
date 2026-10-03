@@ -72,10 +72,19 @@ def main(argv=None):
         except (KeyboardInterrupt, EOFError):
             print("\nGoodbye!")
 
+    def launch_race(role, net, name, duration_s):
+        if GUIEngine is None:
+            print("GUI unavailable: cannot race in terminal mode.")
+            return
+        GUIEngine(start_index=0, race={
+            "role": role, "net": net, "name": name,
+            "duration_s": duration_s,
+        }).run()
+
     if GUIEngine is not None and not args.no_menu:
         try:
             from multiplayer.menus import run_menus
-            run_menus(on_play=launch_solo)
+            run_menus(on_play=launch_solo, on_race=launch_race)
             return
         except Exception as exc:
             print("Menu unavailable, starting single-player directly:", exc)
