@@ -25,6 +25,11 @@ def parse_args(argv=None):
         action="store_true",
         help="List available levels and exit.",
     )
+    parser.add_argument(
+        "--no-menu",
+        action="store_true",
+        help="Skip the home menu and jump straight into single-player.",
+    )
     return parser.parse_args(argv)
 
 
@@ -53,18 +58,29 @@ def main(argv=None):
 
     start_index = args.level - 1
 
-    if GUIEngine is not None:
+    def launch_solo():
+        if GUIEngine is not None:
+            try:
+                GUIEngine(start_index=start_index).run()
+                return
+            except Exception as exc:
+                print("GUI unavailable, falling back to terminal mode:", exc)
+
+        engine = GameEngine(start_index=start_index)
         try:
-            GUIEngine(start_index=start_index).run()
+            engine.run()
+        except (KeyboardInterrupt, EOFError):
+            print("\nGoodbye!")
+
+    if GUIEngine is not None and not args.no_menu:
+        try:
+            from multiplayer.menus import run_menus
+            run_menus(on_play=launch_solo)
             return
         except Exception as exc:
-            print("GUI unavailable, falling back to terminal mode:", exc)
+            print("Menu unavailable, starting single-player directly:", exc)
 
-    engine = GameEngine(start_index=start_index)
-    try:
-        engine.run()
-    except (KeyboardInterrupt, EOFError):
-        print("\nGoodbye!")
+    launch_solo()
 
 
 if __name__ == "__main__":
