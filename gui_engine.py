@@ -1117,6 +1117,14 @@ class GUIEngine:
             self._panel_bg_key = key
             bg = get_panel_photo(win_w, win_h, panel_w)
             if bg is None:
+                # Art unavailable (no Pillow / missing asset): keep the key
+                # cached so we don't redo layout every frame, and make
+                # sure the backdrop label stays hidden so the flat dark
+                # panel colours show instead of a default-white label.
+                try:
+                    self.info_frame.set_background(None)
+                except Exception:
+                    pass
                 return
             self.info_frame.set_background(bg)
             for name, lab in (("status", self.status_label),

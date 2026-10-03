@@ -129,9 +129,12 @@ class Frame:
     def __init__(self, tk_frame: tk.Frame):
         self._frame = tk_frame
         # backdrop photo pinned behind all panel widgets (see set_background)
+        # NOTE: the label starts hidden and carries the frame's dark bg, so
+        # when Pillow / background art is unavailable (e.g. running with a
+        # system python without PIL) there is never a default-white label
+        # showing through the empty panel area.
         self._bg_label = tk.Label(tk_frame, borderwidth=0, highlightthickness=0,
-                                  anchor="nw")
-        self._bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+                                  anchor="nw", bg=tk_frame["bg"])
         self._bg_photo = None
 
     def set_background(self, photo):
