@@ -286,6 +286,59 @@ class Seal3Wall(SealWall):
         return self.GLYPH_SEALED if self.is_blocking() else self.GLYPH_OPEN
 
 
+class Seal4Wall(SealWall):
+    """Green seal ring (Map17 Gallery): blocks while Seal4.active is True."""
+    GLYPH_SEALED = "SL4"
+    GLYPH_OPEN = "    "
+
+    def is_blocking(self) -> bool:
+        return bool(PropertyRegistry.get("Seal4", "active", True))
+
+    def glyph(self) -> str:
+        return self.GLYPH_SEALED if self.is_blocking() else self.GLYPH_OPEN
+
+
+class Seal5Wall(SealWall):
+    """Pink seal ring (Map17 Vault): blocks while Seal5.active is True."""
+    GLYPH_SEALED = "SL5"
+    GLYPH_OPEN = "    "
+
+    def is_blocking(self) -> bool:
+        return bool(PropertyRegistry.get("Seal5", "active", True))
+
+    def glyph(self) -> str:
+        return self.GLYPH_SEALED if self.is_blocking() else self.GLYPH_OPEN
+
+
+class Seal6Wall(SealWall):
+    """Sky seal ring (Map17 Vault/Forge chute): blocks while Seal6.active."""
+    GLYPH_SEALED = "SL6"
+    GLYPH_OPEN = "    "
+
+    def is_blocking(self) -> bool:
+        return bool(PropertyRegistry.get("Seal6", "active", True))
+
+    def glyph(self) -> str:
+        return self.GLYPH_SEALED if self.is_blocking() else self.GLYPH_OPEN
+
+
+class LeverPedestal(GameObject):
+    """Lever base tile (Map17 V/U/N/K): always solid, like the HTML's LEV.
+
+    While ``<LeverN>.active`` becomes True the lever fires once and shoves
+    the token directly below it one cell down (see Level._fire_levers).
+    """
+
+    GLYPH = "LEVR"
+
+    def __init__(self, x, y, lever_name: str = "Lever"):
+        super().__init__(x, y, movable=False)
+        self.lever_name = lever_name
+
+    def is_blocking(self) -> bool:
+        return True
+
+
 class BorderMine(GameObject):
     """Invisible perimeter explosive: always lethal, never blocking.
 

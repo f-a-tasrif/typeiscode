@@ -10,7 +10,7 @@ cell beyond it is free); if a Platform/Door/Trap is in the way its
 """
 
 from __future__ import annotations
-from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine, Warp, SealWall, Seal2Wall, Seal3Wall, LatchDoor, LaserDoor, HardMine
+from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine, Warp, SealWall, Seal2Wall, Seal3Wall, Seal4Wall, Seal5Wall, Seal6Wall, LeverPedestal, LatchDoor, LaserDoor, HardMine
 from blocks import CodeBlock, CircuitLine, is_merge_pair
 from registry import PropertyRegistry
 
@@ -57,6 +57,12 @@ class Level:
         # Forge-crafted finish (map14): while Gate.at is True the win cell
         # is here; the level starts with no Goal tiles at all.
         self.gate2: tuple[int, int] | None = None
+        # Beacon finish (map17): while Beacon.lit is True the win cell is
+        # here, inside an isolated chamber reachable only by portal.
+        self.beacon2: tuple[int, int] | None = None
+        # Lever pedestals (x, y, lever_name) + one-shot fired flags.
+        self.levers: list[tuple[int, int, str]] = []
+        self.lever_fired: dict[str, bool] = {}
         # Crafting recipes: [((kind,val),(kind,val),(kind,val)), ...]
         # Pushing the first two together (either order, orthogonal contact
         # via a push) consumes both and spawns the third at the target cell.
@@ -341,6 +347,14 @@ class Level:
         self.initial_registry.setdefault("Laser", {"beams": True})
         self.initial_registry.setdefault("Seal2", {"active": True})
         self.initial_registry.setdefault("Seal3", {"active": True})
+        self.initial_registry.setdefault("Seal4", {"active": True})
+        self.initial_registry.setdefault("Seal5", {"active": True})
+        self.initial_registry.setdefault("Seal6", {"active": True})
+        self.initial_registry.setdefault("Lever", {"active": False})
+        self.initial_registry.setdefault("Lever2", {"active": False})
+        self.initial_registry.setdefault("Lever3", {"active": False})
+        self.initial_registry.setdefault("Lever4", {"active": False})
+        self.initial_registry.setdefault("Beacon", {"lit": False})
         self.initial_registry.setdefault("Gate", {"at": False})
         PropertyRegistry.reset(self.initial_registry)
         self.active_rules = []
@@ -470,6 +484,7 @@ class Level:
                 self.player.x, self.player.y = dest_x, dest_y
         self.moves += 1
         self.recompile_circuits()
+        lever_msg = self._fire_levers()
 
         # 6. AFTER recompile: lethality then relocated-flag / goal.
         under = self.terrain_at(self.player.x, self.player.y)
@@ -489,11 +504,14 @@ class Level:
         gate_msg = self._check_gate_win()
         if gate_msg is not None:
             return gate_msg
+        beacon_msg = self._check_beacon_win()
+        if beacon_msg is not None:
+            return (lever_msg + " " + beacon_msg).strip() if lever_msg else beacon_msg
         goal_msg = self._check_goal_win(self.tile_at(self.player.x, self.player.y))
         if goal_msg is not None:
-            return goal_msg
+            return (lever_msg + " " + goal_msg).strip() if lever_msg else goal_msg
 
-        return ""
+        return lever_msg
 
     def _check_flag_win(self) -> str | None:
         """Relocated-flag win (map10): while Flag.moved is True the finish
@@ -514,6 +532,62 @@ class Level:
             self.won = True
             return "You reached the forged flag! Level complete."
         return None
+
+    def _check_beacon_win(self) -> str | None:
+        """Beacon finish (map17): while Beacon.lit is True the win cell is
+        beacon2, generated inside an isolated chamber (no Goal tiles)."""
+        if not bool(PropertyRegistry.get("Beacon", "lit", False)):
+            return None
+        if self.beacon2 is not None and (self.player.x, self.player.y) == self.beacon2:
+            self.won = True
+            return "You reached the beacon flag! Level complete."
+        return None
+
+    def _fire_levers(self) -> str:
+        """One-shot lever shoves (Map17 V/U/N/K).
+
+        Mirrors the HTML step() lever loop: for every lever pedestal
+        whose <LeverN>.active is True and which has not fired yet, mark
+        it fired and shove the token directly below it one cell down when
+        the destination is free (no block, no blocking terrain/tile, no
+        portal, no mine). Returns a status message when something fired.
+        """
+        if not getattr(self, "levers", None):
+            return ""
+        fired_msgs = []
+        for lx, ly, lname in list(self.levers):
+            if self.lever_fired.get(lname):
+                continue
+            if not bool(PropertyRegistry.get(lname, "active", False)):
+                continue
+            self.lever_fired[lname] = True
+            blk = self.block_at(lx, ly + 1)
+            if blk is None:
+                continue
+            dx, dy = lx, ly + 2
+            if not (0 <= dx < self.width and 0 <= dy < self.height):
+                continue
+            dest_tile = self.tile_at(dx, dy)
+            if isinstance(dest_tile, Wall) and dest_tile.is_blocking():
+                continue
+            dest_terr = self.terrain_at(dx, dy)
+            if isinstance(dest_terr, SealWall) and dest_terr.is_blocking():
+                continue
+            if dest_terr is not None and dest_terr.is_blocking():
+                continue
+            if self.warp_at(dx, dy) is not None:
+                continue
+            if isinstance(self.terrain_at(dx, dy), (HiddenBoom, BorderMine, HardMine)):
+                continue
+            if self.block_at(dx, dy) is not None:
+                continue
+            blk.x, blk.y = dx, dy
+            self._index_dirty = True
+            fired_msgs.append(lname)
+        if fired_msgs:
+            self.recompile_circuits()
+            return f"Lever(s) fired: {', '.join(fired_msgs)} shoved its token down."
+        return ""
 
     def _check_goal_win(self, tile: GameObject) -> str | None:
         """Normal Goal-tile win, suppressed while the flag is relocated."""
@@ -588,6 +662,8 @@ class Level:
         flag2 = getattr(self, "flag2", None)
         gate_on = bool(PropertyRegistry.get("Gate", "at", False))
         gate2 = getattr(self, "gate2", None)
+        beacon_on = bool(PropertyRegistry.get("Beacon", "lit", False))
+        beacon2 = getattr(self, "beacon2", None)
         lines = []
         header = "     " + "".join(f"{x:^5}" for x in range(self.width))
         lines.append(header)
@@ -616,6 +692,9 @@ class Level:
                     # Relocated finish flag in its hidden chamber.
                     glyph = Goal(x, y).glyph()
                 elif (gate_on and gate2 is not None and (x, y) == gate2
+                        and self.block_at(x, y) is None):
+                    glyph = Goal(x, y).glyph()
+                elif (beacon_on and beacon2 is not None and (x, y) == beacon2
                         and self.block_at(x, y) is None):
                     glyph = Goal(x, y).glyph()
                 else:
@@ -653,4 +732,5 @@ class Level:
         PropertyRegistry.reset(self.initial_registry)
         self.player_invisible = False
         self.fusion_press_count = 0
+        self.lever_fired = {}
         self.recompile_circuits()

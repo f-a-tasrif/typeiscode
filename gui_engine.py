@@ -93,6 +93,8 @@ LEVEL_HINTS = [
     "",
 
 "",
+
+"",
 ]
 
 
@@ -458,6 +460,8 @@ class GUIEngine:
             getattr(self.level, "flag2", None),
             bool(PropertyRegistry.get("Gate", "at", False)),
             getattr(self.level, "gate2", None),
+            bool(PropertyRegistry.get("Beacon", "lit", False)),
+            getattr(self.level, "beacon2", None),
         ))
         return tuple(parts)
 
@@ -592,6 +596,8 @@ class GUIEngine:
         flag2 = getattr(self.level, "flag2", None)
         gate_on = bool(PropertyRegistry.get("Gate", "at", False))
         gate2 = getattr(self.level, "gate2", None)
+        beacon_on = bool(PropertyRegistry.get("Beacon", "lit", False))
+        beacon2 = getattr(self.level, "beacon2", None)
         if is_global:
             for gy in range(y0i, y1i):
                 for gx in range(x0i, x1i):
@@ -615,6 +621,8 @@ class GUIEngine:
                         if flag_moved and flag2 is not None and (gx, gy) == flag2:
                             draw_goal(raw, px, py, cell, fast=fast)
                         elif gate_on and gate2 is not None and (gx, gy) == gate2:
+                            draw_goal(raw, px, py, cell, fast=fast)
+                        elif beacon_on and beacon2 is not None and (gx, gy) == beacon2:
                             draw_goal(raw, px, py, cell, fast=fast)
 
                     # 2. terrain layer
@@ -645,11 +653,13 @@ class GUIEngine:
                             draw_seal_wall(raw, px, py, cell, fast=fast)
                         else:
                             draw_floor(raw, px, py, cell, fast=fast)
-                    elif tcls in ("Seal2Wall", "Seal3Wall"):
+                    elif tcls in ("Seal2Wall", "Seal3Wall", "Seal4Wall", "Seal5Wall", "Seal6Wall"):
                         if terr.is_blocking():
                             draw_seal_wall(raw, px, py, cell, fast=fast)
                         else:
                             draw_floor(raw, px, py, cell, fast=fast)
+                    elif tcls == "LeverPedestal":
+                        draw_stone(raw, px, py, cell, fast=fast)
                     elif tcls == "LatchDoor":
                         if terr.is_blocking():
                             draw_door_closed(raw, px, py, cell, fast=fast)

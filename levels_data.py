@@ -20,7 +20,7 @@ Layout pattern used by every level ("workshop + corridor"):
 """
 
 from level import Level
-from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor, SealWall, Seal2Wall, Seal3Wall, LatchDoor, LaserDoor, Stone, HardMine
+from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor, SealWall, Seal2Wall, Seal3Wall, Seal4Wall, Seal5Wall, Seal6Wall, LeverPedestal, LatchDoor, LaserDoor, Stone, HardMine
 from blocks import CodeBlock, CircuitLine, CLASS, PROP, OP, VALUE, NOT
 from maps_data import MAPS
 
@@ -51,6 +51,14 @@ RULES_REGISTRY = {
     "Seal": {"active": True},
     "Seal2": {"active": True},
     "Seal3": {"active": True},
+    "Seal4": {"active": True},
+    "Seal5": {"active": True},
+    "Seal6": {"active": True},
+    "Lever": {"active": False},
+    "Lever2": {"active": False},
+    "Lever3": {"active": False},
+    "Lever4": {"active": False},
+    "Beacon": {"lit": False},
     "Latch": {"isOpen": False},
     "Laser": {"beams": True},
     "Gate": {"at": False},
@@ -67,6 +75,15 @@ MAP_TOKENS: dict[str, tuple[str, object]] = {
     "Seal.": (CLASS, "Seal"),
     "Seal2.": (CLASS, "Seal2"),
     "Seal3.": (CLASS, "Seal3"),
+    "Seal4.": (CLASS, "Seal4"),
+    "Seal5.": (CLASS, "Seal5"),
+    "Seal6.": (CLASS, "Seal6"),
+    "Lever.": (CLASS, "Lever"),
+    "Lever2.": (CLASS, "Lever2"),
+    "Lever3.": (CLASS, "Lever3"),
+    "Lever4.": (CLASS, "Lever4"),
+    "Beacon.": (CLASS, "Beacon"),
+    "lit": (PROP, "lit"),
     "Latch.": (CLASS, "Latch"),
     "Laser.": (CLASS, "Laser"),
     "Gate.": (CLASS, "Gate"),
@@ -94,26 +111,9 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
                     tokens: list[tuple[int, int, str]], warp: list | None = None,
                     stone_mode: bool = False, rec: list | None = None,
                     f2: list | tuple | None = None,
-                    border_mines: bool = False, swap_sz: bool = False) -> Level:
-    """Build a global-rules level from HTML map data.
-
-    `rows` are ASCII map rows, `start` is (row, col), `tokens` are
-    (row, col, text).  The game uses (x, y) = (col, row).  No wall
-    border is added (nothing in these levels can make walls passable,
-    so no BorderMines are needed) and no CircuitLine objects are used:
-    rules compile from statements found anywhere on the board.
-
-    stone_mode: when True (map8/level 9), `T` cells are Stone blocks
-    (blocking while Stone.solid = True, like the HTML's orange stone);
-    otherwise `T` is a Platform void trap as in the earlier maps.
-    rec: crafting recipes as HTML texts, e.g. [['@Door','OR','Entry']].
-    f2: [row, col] forged-flag cell for Gate.at win (map14).
-    border_mines: add BorderMine ring (outer border hides always-lethal
-    mines, like map10/map14 where Wall.solid = False is solvable).
-    swap_sz: when True (map16), `S` cells are Seal2 walls and `Z` cells
-    are Seal walls (the HTML purple/teal convention); otherwise the
-    legacy mapping (S=Seal, Z=Seal2) is kept for earlier maps.
-    """
+                    border_mines: bool = False, swap_sz: bool = False,
+                    beacon2: list | tuple | None = None) -> Level:
+    
     W, H = len(rows[0]), len(rows)
     lvl = Level(name, W, H, RULES_REGISTRY)
     lvl.rule_mode = "global"
@@ -152,6 +152,24 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
                 lvl.add_object(SealWall(x, y) if swap_sz else Seal2Wall(x, y))
             elif ch == "Y":
                 lvl.add_object(Seal3Wall(x, y))
+            elif ch == "P":
+                lvl.add_object(Seal4Wall(x, y))
+            elif ch == "Q":
+                lvl.add_object(Seal5Wall(x, y))
+            elif ch == "W":
+                lvl.add_object(Seal6Wall(x, y))
+            elif ch == "V":
+                lvl.add_object(LeverPedestal(x, y, "Lever"))
+                lvl.levers.append((x, y, "Lever"))
+            elif ch == "U":
+                lvl.add_object(LeverPedestal(x, y, "Lever2"))
+                lvl.levers.append((x, y, "Lever2"))
+            elif ch == "N":
+                lvl.add_object(LeverPedestal(x, y, "Lever3"))
+                lvl.levers.append((x, y, "Lever3"))
+            elif ch == "K":
+                lvl.add_object(LeverPedestal(x, y, "Lever4"))
+                lvl.levers.append((x, y, "Lever4"))
             # "." = nothing
     sr, sc = start
     lvl.set_player(sc, sr)
@@ -170,6 +188,8 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
             lvl.recipes.append(((ka, va), (kb, vb), (kc, vc)))
     if f2 is not None:
         lvl.gate2 = (f2[1], f2[0])
+    if beacon2 is not None:
+        lvl.beacon2 = (beacon2[1], beacon2[0])
     if border_mines:
         lvl.add_wall_border()
     lvl.recompile_circuits()
@@ -177,11 +197,7 @@ def _build_from_map(name: str, rows: list[str], start: tuple[int, int],
 
 
 def _flip_value_block(lvl: Level, entry: dict, text: str) -> None:
-    """Toggle a VALUE token block (False<->True) in a built level.
-
-    `maps_data.py` stays a faithful port of the HTML; deliberate
-    deviations live here. Recompiles afterwards.
-    """
+    
     for tr, tc, t in entry["tokens"]:
         if t == text:
             blk = lvl.block_at(tc, tr)
@@ -194,13 +210,7 @@ def _flip_value_block(lvl: Level, entry: dict, text: str) -> None:
 
 
 def build_level1() -> Level:
-    """
-    Tutorial level. The path to the goal is broken: the circuit reads
-    Path.solid = false, so the Path cell in the corridor is an open void
-    and stepping into it makes the character vanish.
-    Swap in the spare `true` block to seal the void into solid, walkable
-    ground and cross to the goal.
-    """
+    
     W, H = 16, 7
     lvl = Level("1", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
@@ -228,11 +238,7 @@ def build_level1() -> Level:
 
 
 def build_level2() -> Level:
-    """
-    Introduces Door. A closed Door blocks the corridor; the workshop
-    circuit reads Door.isOpen = false. Swap in the spare `true` block
-    to open it.
-    """
+    
     W, H = 16, 7
     lvl = Level("2", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
@@ -259,13 +265,7 @@ def build_level2() -> Level:
 
 
 def build_level3() -> Level:
-    """
-    Two obstacles in sequence: a live Trap that must be disarmed
-    (Trap.isLethal = false) and, further along, a void in the path that
-    must be sealed into walkable ground (Path.solid = true). Two
-    independent workshops, one per obstacle, each reachable strictly
-    before its own obstacle's column.
-    """
+    
     W, H = 28, 7
     lvl = Level("3", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
@@ -312,32 +312,13 @@ def build_level3() -> Level:
 
 
 def build_level4() -> Level:
-    """
-    Swap the values (global rules).  Intended solution: push False down
-    out of the Door rule (registry reverts to Door.open = False),
-    carry it left and up into the Trap rule (Trap.lethal = False),
-    push True left into the empty Door slot (Door.open = True), drop
-    back to the corridor and cross the harmless trap through the open
-    door to the flag.  Teaches rule reversion and that a stray token
-    after the value is ignored.
-    """
+    
     e = MAPS[3]
     return _build_from_map("4",
                            e["rows"], e["start"], e["tokens"])
 
 
 def build_level5() -> Level:
-    """
-    Three rooms with a NOT vault and a trap (global rules).  Intended
-    solution: True down into the Path rule (Path.solid = True -- safe
-    floor), True up into the Door rule (door opens), cross the middle
-    room and drop through a table gap into the vault, push NOT up and
-    right into the Trap rule slot, push True up beside it (Trap.lethal
-    = NOT True = False), cross the harmless trap to the flag.
-    Introduces the NOT token.  (The HTML map has a False feeding the
-    Path rule; here it is a True so the tables seal instead of opening
-    into voids.)
-    """
     e = MAPS[1]
     lvl = _build_from_map("5",
                           e["rows"], e["start"], e["tokens"])
@@ -346,14 +327,7 @@ def build_level5() -> Level:
 
 
 def build_level6() -> Level:
-    """
-    Serpentine vault (global rules).  Intended solution: push the first
-    NOT up into the Path rule (Path.solid = NOT True = False -- the gap
-    table becomes a void), walk in, push the second NOT up through the
-    wall opening into the Door rule, then push False up beside it
-    (Door.open = NOT False = True) and walk through the door to the
-    flag.  Both Path and Door rules use NOT.
-    """
+    
     e = MAPS[2]
     lvl = _build_from_map("6",
                           e["rows"], e["start"], e["tokens"])
@@ -364,15 +338,7 @@ def build_level6() -> Level:
 
 
 def build_level7() -> Level:
-    """
-    Four chambers, three gates (global rules, 25x9).  Longest chain:
-    True up into the Door rule (opens), True right through the door
-    and down into the Path rule (Path.solid = True -- safe floor),
-    True down and right through the sealed table cell into room 3,
-    NOT up into the Trap slot, True up beside it (Trap.lethal = NOT
-    True = False), cross the harmless trap to the flag.  (The HTML
-    map feeds the Path rule with a False; here it is a True.)
-    """
+    
     e = MAPS[4]
     lvl = _build_from_map("7",
                           e["rows"], e["start"], e["tokens"])
@@ -381,30 +347,9 @@ def build_level7() -> Level:
 
 
 def build_level8() -> Level:
-    """
-    Same design as level 3 (two obstacles in sequence, each with its own
-    workshop) but with a much taller upper floor: the workshop room grows
-    from 3 rows of play space to 8, so every block can be pushed, spun
-    around, and re-arranged freely before being slotted in.  Both
-    statements still need fixing: Door.isOpen = true and
-    Path.solid = true (sealing the void back into walkable ground).  The rooms' contents are exchanged
-    relative to level 3: workshop A (first room) now holds the
-    Platform/Bridge statement guarding the obstacle at x=8, while
-    workshop B (second room) holds the Door statement guarding the
-    obstacle at x=20 -- so each circuit still sits in the room reached
-    strictly before its own obstacle.
-
-    The bottom wall of the second workshop is mined exactly like the
-    outer border (BorderMine inside every wall cell), so even
-    Wall.solid = False cannot walk through it.  That seals off the
-    original corridor GOAL -- its only safe approach is wall cell
-    (26, 9) -- so the level is finished by fusing a new GOAL from the
-    Path. and open tokens: they fuse the moment they are put together
-    (one contact, no pressing); the original flag disappears the moment
-    the new one blooms (only one flag exists at a time).
-    """
+    
     W, H = 28, 12
-    lvl = Level("8 - If one path closes, another opens. ", W, H, DEFAULT_REGISTRY)
+    lvl = Level("13 - If one path closes, another opens. ", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
     lvl.set_player(1, 10)
     lvl.set_goal(26, 10)
@@ -466,7 +411,7 @@ def build_level8() -> Level:
 
 def build_level9() -> Level:
     e = MAPS[5]
-    lvl = _build_from_map("9 - Vault cathedral", e["rows"], e["start"], e["tokens"],
+    lvl = _build_from_map("8 - Vault cathedral", e["rows"], e["start"], e["tokens"],
                           stone_mode=True)
     for w in e.get("warp", []):
         lvl.add_warp_pair(w[1], w[0], w[3], w[2])
@@ -475,7 +420,7 @@ def build_level9() -> Level:
 
 def build_level10() -> Level:
     e = MAPS[6]
-    lvl = _build_from_map("10 - The Relocating Flag", e["rows"], e["start"], e["tokens"],
+    lvl = _build_from_map("9 - The Relocating Flag", e["rows"], e["start"], e["tokens"],
                           stone_mode=True)
     for w in e.get("warp", []):
         lvl.add_warp_pair(w[1], w[0], w[3], w[2])
@@ -490,48 +435,29 @@ def build_level10() -> Level:
 
 
 def build_level11() -> Level:
-    """Map 14 - The Forge Citadel (L6).
-
-    Mechanism ported from Newmap14.html:
-    - Trap/Door/Wall rules with NOT, plus Latch/Stone/Laser/Seal/Seal2/Seal3.
-    - Striped B walls + outer border hide always-lethal mines, so
-      Wall.solid = False opens plain walls but never the striped ones.
-    - 9 hidden portal pairs; blocks can never be pushed onto mines/portals.
-    - Crafting: Access + point -> entry, entry + turn -> Gate.
-      Push a block into another; if they form a recipe both vanish and
-      the result appears where the target stood.
-    - Gate.at = True generates the finish at f2 (isolated chamber,
-      portal-only). Latch/Stone open the lower Forge vault; three seals
-      guard turn / spare NOT / at; laser guards the Seal3 room.
-    """
     e = MAPS[7]
-    return _build_from_map("11 - The Forge Citadel", e["rows"], e["start"],
+    return _build_from_map("10 - The Forge Citadel", e["rows"], e["start"],
                            e["tokens"], warp=e.get("warp"),
                            stone_mode=True, rec=e.get("rec"),
                            f2=e.get("f2"), border_mines=True)
 
 
 def build_level12() -> Level:
-    """Map 16 - Nested vaults, sealed walls & a timing window (L6).
-
-    Mechanism ported from NewMap16.html:
-    - Stone/Wall/Trap/Door rules with NOT, plus Seal/Seal2/Seal3.
-    - `S` cells follow Seal2.active (purple corridor seals: one plugs
-      the corridor entrance, one sits before the flag), `Z` cells follow
-      Seal.active (teal ring), `Y` follows Seal3.active (amber seal in
-      front of the flag) -- hence swap_sz=True.
-    - Striped B walls + outer border hide always-lethal mines, so
-      Wall.solid = False opens plain walls but never the striped ones.
-    - 7 hidden portal pairs; blocks can never be pushed onto mines/portals.
-    - Timing window: the Door rule must only be completed AFTER Seal2 is
-      done (teal ring stays open while Door is shut and Trap is off).
-    """
     e = MAPS[8]
-    return _build_from_map("12 - Nested Vaults & Timing Window", e["rows"],
+    return _build_from_map("11 - Nested Vaults & Timing Window", e["rows"],
                            e["start"], e["tokens"], warp=e.get("warp"),
                            stone_mode=True, border_mines=True, swap_sz=True)
 
 
+def build_level13() -> Level:
+    e = MAPS[9]
+    return _build_from_map("12 - The Cascade Vaults Undercroft", e["rows"],
+                           e["start"], e["tokens"], warp=e.get("warp"),
+                           stone_mode=True, border_mines=True,
+                           beacon2=e.get("f2"))
+
+
 ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4,
-              build_level5, build_level6, build_level7, build_level8,
-              build_level9, build_level10, build_level11, build_level12]
+              build_level5, build_level6, build_level7, build_level9,
+              build_level10, build_level11, build_level12, build_level13,
+              build_level8]
