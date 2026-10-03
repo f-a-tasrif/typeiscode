@@ -20,10 +20,11 @@ MAX_PLAYERS = 4
 BEACON_INTERVAL_S = 1.0
 
 # Placeholder gamemodes — selection is stored on the lobby, gameplay later.
+# Ids are stable (tests + wire format); labels match the menu hub wording.
 GAMEMODES: list[dict[str, str]] = [
-    {"id": "co-op-puzzle", "label": "Co-op Puzzle (coming soon)"},
-    {"id": "race", "label": "Race (coming soon)"},
-    {"id": "versus", "label": "Versus (coming soon)"},
+    {"id": "co-op-puzzle", "label": "Win together (coming soon)"},
+    {"id": "race", "label": "I'm faster than you (coming soon)"},
+    {"id": "versus", "label": "Duel (coming soon)"},
 ]
 
 GAMEMODE_IDS = [g["id"] for g in GAMEMODES]

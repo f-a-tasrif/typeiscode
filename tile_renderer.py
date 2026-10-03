@@ -44,6 +44,10 @@ def _check_photo_root():
         _stone_photos.clear()
         _door_photos.clear()
         _trap_photos.clear()
+        try:
+            _trap_tk_photos.clear()
+        except NameError:
+            pass
         _skel_photos.clear()
         _lever_photos.clear()
         _panel_photos.clear()
@@ -593,7 +597,7 @@ def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = Fa
 
 
 def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
-    """Live trap — digital-rain art from assets/trap.gif, else spikes."""
+    """Live trap — assets/trap.gif fitted into the cell, nothing over it."""
     # Photo first in both modes (see draw_door_closed).
     photo = None
     try:
@@ -601,6 +605,7 @@ def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = 
     except Exception:
         photo = None
     if photo is not None:
+        draw_floor(canvas, x, y, size, fast=fast)
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
         return
@@ -637,22 +642,12 @@ def draw_trap_lethal(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = 
 
 
 def draw_trap_safe(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False):
-    """Disarmed trap — grayed out, no spikes."""
-    if fast:
-        canvas.create_rectangle(x, y, x + size, y + size,
-                                fill="#1b1f2f", outline="#2a2f40", width=1)
-        return
-    canvas.create_rectangle(x, y, x + size, y + size,
-                            fill="#1b1f2f", outline="#2a2f40", width=1)
-    m = max(2, size // 6)
-    cx, cy = x + size // 2, y + size // 2
-    half = size // 2 - m
-    canvas.create_polygon(cx, cy - half,
-                          cx + half, cy,
-                          cx, cy + half,
-                          cx - half, cy,
-                          fill="", outline=TRAP_SAFE_LINE,
-                          width=max(1, size // 24), dash=(4, 3))
+    """Disarmed trap — removed, the path looks like normal floor.
+
+    Once the logic flips Trap.isLethal to False the trap is gone, so
+    this draws plain floor with no leftover art or outline.
+    """
+    draw_floor(canvas, x, y, size, fast=fast)
 
 
 def draw_code_block(canvas: tk.Canvas, x: int, y: int, size: int,
@@ -1379,6 +1374,7 @@ TRAP_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "assets", "trap.gif")
 _trap_src = None          # cached RGBA PIL image, or False when unavailable
 _trap_photos: dict[int, object] = {}  # cell size -> PhotoImage
+_trap_tk_photos: dict[int, object] = {}  # cell size -> Tk-native PhotoImage
 
 
 def _load_trap_src():
@@ -1404,15 +1400,52 @@ def _load_trap_src():
     return img
 
 
+def _trap_photo_tk(size: int):
+    """Tk-native GIF load (no Pillow needed), fitted into a `size`px cell.
+
+    Tk's PhotoImage reads GIFs on its own, so the trap art shows even
+    when Pillow is not installed.  Subsample only does integer shrink,
+    so this is approximate — the Pillow path above stays preferred.
+    Returns None headless (no Tk root) or when the asset is missing.
+    """
+    _check_photo_root()
+    key = _quant_size(size)
+    if key in _trap_tk_photos:
+        return _trap_tk_photos[key]
+    try:
+        if tk._default_root is None:
+            return None
+        photo = tk.PhotoImage(file=TRAP_IMAGE, format="gif -index 0")
+    except Exception:
+        try:
+            photo = tk.PhotoImage(file=TRAP_IMAGE)
+        except Exception:
+            return None
+    try:
+        w, h = int(photo.width()), int(photo.height())
+        factor = max(1, min(w, h) // max(8, key))
+        if factor > 1:
+            photo = photo.subsample(factor, factor)
+    except Exception:
+        pass
+    _trap_tk_photos[key] = photo
+    return photo
+
+
 def _trap_photo(size: int):
-    """PhotoImage of the live trap fitted into a `size`px cell (cached)."""
+    """PhotoImage of the live trap fitted into a `size`px cell (cached).
+
+    The whole GIF frame is fitted into the cell so the tile mirrors the
+    art's layout (dark strip on top, rain field below).
+    """
     _check_photo_root()
     key = _quant_size(size)
     if key in _trap_photos:
         return _trap_photos[key]
     src = _load_trap_src()
     if src is None:
-        return None
+        # Pillow missing/unusable — fall back to Tk's built-in GIF reader.
+        return _trap_photo_tk(size)
     side = max(8, int(key))
     fit = src.copy()
     fit.thumbnail((side, side), _PILImage.BILINEAR)

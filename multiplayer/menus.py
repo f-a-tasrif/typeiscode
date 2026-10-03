@@ -1,13 +1,18 @@
 """menus.py — Tkinter home / multiplayer / lobby screens (GUI only).
 
-Flow (all same-network LAN):
+Flow:
   Home [Play | Multiplayer | Exit Game]
     Play         -> callback into single-player GUIEngine
-    Multiplayer  -> [Create Lobby | Join Lobby | Back]
-      Create     -> pick gamemode, enter name, Create -> host lobby screen
-      Join       -> enter name, Refresh LAN list or type host IP, Join
-      Lobby      -> host sees players + Start (placeholder until gamemode
-                    level logic lands); client waits for host start.
+    Multiplayer  -> [I'm faster than you | Two player | Back]
+      I'm faster than you -> LAN lobby menu (race mode fixed)
+      Two player          -> [Duel | Win together | Back]
+        Duel              -> LAN lobby menu (versus mode fixed)
+        Win together      -> LAN lobby menu (co-op mode fixed)
+      LAN lobby menu -> [Create Lobby | Join Lobby | Back]
+        Create   -> enter name -> host lobby screen (mode fixed)
+        Join     -> enter name, Refresh LAN list or type host IP, Join
+        Lobby    -> host sees players + Start (placeholder until gamemode
+                   level logic lands); client waits for host start.
 """
 from __future__ import annotations
 
@@ -17,6 +22,11 @@ from .protocol import (
     GAMEMODES,
     gamemode_label,
 )
+
+# Multiplayer hub mapping: hub button -> fixed lobby gamemode id.
+FASTER_MODE = "race"          # "I'm faster than you" — race over LAN
+DUEL_MODE = "versus"          # "Two player > Duel" — versus over LAN
+TOGETHER_MODE = "co-op-puzzle"  # "Two player > Win together" — co-op over LAN
 
 BG = "#0f1323"
 PANEL = "#111528"
@@ -111,33 +121,80 @@ class MenuApp:
     def show_multiplayer(self):
         self._leave_net()
         f = self._new_frame()
-        self._title(f, "MULTIPLAYER", "Same-network (LAN) lobbies.")
-        self._btn(f, "＋  Create Lobby", self.show_create).pack(fill="x", pady=6)
-        self._btn(f, "🔍  Join Lobby", self.show_join).pack(fill="x", pady=6)
+        self._title(f, "MULTIPLAYER", "Pick a mode.")
+        self._btn(f, "⚡  I'm faster than you",
+                  lambda: self.show_lan_menu(FASTER_MODE)).pack(fill="x", pady=6)
+        self._btn(f, "👥  Two player", self.show_two_player).pack(fill="x", pady=6)
         self._btn(f, "←  Back", self.show_home).pack(fill="x", pady=6)
 
-    def show_create(self):
+    def show_two_player(self):
         f = self._new_frame()
-        self._title(f, "CREATE LOBBY", "Pick a gamemode, then create the lobby.")
+        self._title(f, "TWO PLAYER", "Pick a two-player mode.")
+        self._btn(f, "⚔  Duel",
+                  lambda: self.show_lan_menu(DUEL_MODE)).pack(fill="x", pady=6)
+        self._btn(f, "🤝  Win together",
+                  lambda: self.show_lan_menu(TOGETHER_MODE)).pack(fill="x", pady=6)
+        self._btn(f, "←  Back", self.show_multiplayer).pack(fill="x", pady=6)
+
+    def _lan_title(self, gamemode: str) -> str:
+        if gamemode == FASTER_MODE:
+            return "I'M FASTER THAN YOU"
+        if gamemode == DUEL_MODE:
+            return "DUEL"
+        if gamemode == TOGETHER_MODE:
+            return "WIN TOGETHER"
+        return gamemode.upper()
+
+    def _lan_back(self, gamemode: str):
+        # "I'm faster than you" lives directly under Multiplayer;
+        # Duel / Win together live under Two player.
+        if gamemode == FASTER_MODE:
+            self.show_multiplayer()
+        else:
+            self.show_two_player()
+
+    def show_lan_menu(self, gamemode: str):
+        f = self._new_frame()
+        self._title(f, self._lan_title(gamemode),
+                    f"Same-network (LAN) lobby — {gamemode_label(gamemode)}.")
+        self._btn(f, "＋  Create Lobby",
+                  lambda m=gamemode: self.show_create(m)).pack(fill="x", pady=6)
+        self._btn(f, "🔍  Join Lobby",
+                  lambda m=gamemode: self.show_join(m)).pack(fill="x", pady=6)
+        self._btn(f, "←  Back",
+                  lambda m=gamemode: self._lan_back(m)).pack(fill="x", pady=6)
+
+    def show_create(self, gamemode: str | None = None):
+        f = self._new_frame()
+        fixed = gamemode if gamemode in (FASTER_MODE, DUEL_MODE, TOGETHER_MODE) else None
+        title_sub = (f"{self._lan_title(fixed)} — create the LAN lobby."
+                     if fixed else "Pick a gamemode, then create the lobby.")
+        self._title(f, "CREATE LOBBY", title_sub)
         self.tk.Label(f, text="Your name:", font=("Consolas", 11),
                       fg=TEXT, bg=BG).pack(anchor="w")
         name_var = self.tk.StringVar(value="Host")
         self.tk.Entry(f, textvariable=name_var,
                       font=("Consolas", 12)).pack(fill="x", pady=(0, 10))
-        self.tk.Label(f, text="Gamemode:", font=("Consolas", 11),
-                      fg=TEXT, bg=BG).pack(anchor="w")
-        mode_var = self.tk.StringVar(value=GAMEMODES[0]["id"])
-        labels = [g["label"] for g in GAMEMODES]
-        ids = [g["id"] for g in GAMEMODES]
-        label_var = self.tk.StringVar(value=labels[0])
+        if fixed is not None:
+            mode_var = self.tk.StringVar(value=fixed)
+            self.tk.Label(f, text=f"Mode: {gamemode_label(fixed)}",
+                          font=("Consolas", 11, "bold"),
+                          fg=TEXT, bg=BG).pack(anchor="w", pady=(0, 4))
+        else:
+            self.tk.Label(f, text="Gamemode:", font=("Consolas", 11),
+                          fg=TEXT, bg=BG).pack(anchor="w")
+            mode_var = self.tk.StringVar(value=GAMEMODES[0]["id"])
+            labels = [g["label"] for g in GAMEMODES]
+            ids = [g["id"] for g in GAMEMODES]
+            label_var = self.tk.StringVar(value=labels[0])
 
-        def _on_mode_pick(choice):
-            try:
-                mode_var.set(ids[labels.index(choice)])
-            except ValueError:
-                pass
-        self.tk.OptionMenu(f, label_var, *labels,
-                           command=_on_mode_pick).pack(fill="x", pady=(0, 4))
+            def _on_mode_pick(choice):
+                try:
+                    mode_var.set(ids[labels.index(choice)])
+                except ValueError:
+                    pass
+            self.tk.OptionMenu(f, label_var, *labels,
+                               command=_on_mode_pick).pack(fill="x", pady=(0, 4))
         note = self.tk.Label(
             f, text="Gamemode level plan + logic will be added later —\n"
                     "the lobby stores your pick for now.",
@@ -147,12 +204,16 @@ class MenuApp:
             f, "Create",
             lambda: self._do_create(name_var.get(), mode_var.get())).pack(
                 fill="x", pady=6)
-        self._btn(f, "←  Back", self.show_multiplayer).pack(fill="x", pady=6)
+        back_target = (lambda m=fixed: self.show_lan_menu(m)) if fixed else self.show_multiplayer
+        self._btn(f, "←  Back", back_target).pack(fill="x", pady=6)
 
-    def show_join(self):
+    def show_join(self, gamemode: str | None = None):
         from .lobby import LobbyClient
         f = self._new_frame()
-        self._title(f, "JOIN LOBBY", "Join a lobby on the same network as the host.")
+        fixed = gamemode if gamemode in (FASTER_MODE, DUEL_MODE, TOGETHER_MODE) else None
+        title_sub = (f"{self._lan_title(fixed)} — join a lobby on the same network."
+                     if fixed else "Join a lobby on the same network as the host.")
+        self._title(f, "JOIN LOBBY", title_sub)
         self.tk.Label(f, text="Your name:", font=("Consolas", 11),
                       fg=TEXT, bg=BG).pack(anchor="w")
         name_var = self.tk.StringVar(value="Player")
@@ -165,9 +226,16 @@ class MenuApp:
 
         def refresh():
             listbox.delete(0, "end")
-            self.discovered = LobbyClient.discover(timeout=1.5)
+            all_found = LobbyClient.discover(timeout=1.5)
+            if fixed is not None:
+                self.discovered = [i for i in all_found if i.gamemode == fixed]
+            else:
+                self.discovered = all_found
             if not self.discovered:
-                listbox.insert("end", "(no lobbies found — check same Wi-Fi/LAN)")
+                if fixed is not None:
+                    listbox.insert("end", f"(no {fixed} lobbies — check same Wi-Fi/LAN)")
+                else:
+                    listbox.insert("end", "(no lobbies found — check same Wi-Fi/LAN)")
             for info in self.discovered:
                 listbox.insert(
                     "end",
@@ -202,7 +270,8 @@ class MenuApp:
                 return
             self._do_join(addr, port_i, name_var.get())
         self._btn(f, "Join", _do_join).pack(fill="x", pady=6)
-        self._btn(f, "←  Back", self.show_multiplayer).pack(fill="x", pady=6)
+        back_target = (lambda m=fixed: self.show_lan_menu(m)) if fixed else self.show_multiplayer
+        self._btn(f, "←  Back", back_target).pack(fill="x", pady=6)
 
     # -- actions ------------------------------------------------------
     def _do_create(self, name, gamemode):
@@ -281,6 +350,11 @@ class MenuApp:
             status.configure(text="Waiting for host to start…")
 
         def leave():
+            mode = None
+            if is_host and host is not None:
+                mode = host.gamemode
+            elif not is_host and client is not None:
+                mode = client.gamemode
             if is_host:
                 try:
                     host.stop()
@@ -293,7 +367,10 @@ class MenuApp:
                 except Exception:
                     pass
                 self.client = None
-            self.show_multiplayer()
+            if mode in (FASTER_MODE, DUEL_MODE, TOGETHER_MODE):
+                self.show_lan_menu(mode)
+            else:
+                self.show_multiplayer()
         self._btn(f, "✕  Leave Lobby", leave).pack(fill="x", pady=6)
 
         # poll host/client events into the UI
