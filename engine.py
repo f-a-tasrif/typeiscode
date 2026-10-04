@@ -1,10 +1,3 @@
-"""
-engine.py
----------
-GameEngine drives the terminal UI: prints the grid + circuit status
-each tick, reads a key from the player, and forwards it to the current
-Level. Also handles level progression, restart, help and quit commands.
-"""
 
 from __future__ import annotations
 from levels_data import ALL_LEVELS
@@ -43,7 +36,6 @@ class GameEngine:
         self.level.reset()
 
     def next_level(self) -> bool:
-        """Advance to the next level. Returns False if the game is finished."""
         if self.level_index + 1 >= len(ALL_LEVELS):
             return False
         self.level_index += 1

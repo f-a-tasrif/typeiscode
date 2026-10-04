@@ -1,10 +1,3 @@
-"""maps_data.py -- Map data ported from type-is-code-maps.html (source of truth).
-
-Each MAPS entry keeps: name, rows (list of str), start=(row, col),
-tokens=[(row, col, text)], solution=[(moves_string, note)].
-[row, col] order is kept as-is from the HTML's M array.
-Map 1 has the HTML patch applied: row index 3 is "#......#.......F.#".
-"""
 
 MAPS = [
     {

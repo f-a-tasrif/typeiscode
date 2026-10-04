@@ -1,19 +1,10 @@
-"""
-gui_engine.py
--------------
-Graphical game engine for "Type Is Code".
-
-Renders every entity as procedural Canvas shapes (via tile_renderer)
-instead of text glyphs.  The window is fully resizable — cell size is
-recomputed dynamically so that the board always fills the available
-canvas area.  Arrow keys are supported alongside W/A/S/D.
-"""
 
 from __future__ import annotations
+import tkinter as tk
+
 from graficial import Window
 from levels_data import ALL_LEVELS
 from registry import PropertyRegistry
-from view import GameView
 from tile_renderer import (
     draw_wall, draw_floor, draw_goal, draw_player,
     draw_void,
@@ -27,56 +18,59 @@ from tile_renderer import (
     draw_laser, draw_lever,
     draw_latch_closed, draw_latch_open,
     draw_seal_wall, draw_warp, draw_mine,
-    draw_parallax_grid, draw_vignette,
-    draw_warp_fx, draw_mine_fx, draw_block_fx,
-    draw_laser_fx, draw_trap_fx, draw_goal_fx,
-    draw_dust_puff, _soft_shadow,
     get_canvas_photo, get_panel_photo, get_panel_slice,
+    advance_trap_animation, _tagged, SEAL_SHEET_COL,
 )
 from multiplayer.race import (Standing, compute_standings, fmt_time,
                               board_lines)
 
-# ── colour tokens (info-panel only) ─────────────────────────────────
-BACKGROUND     = "#0f1323"
-PANEL_BG       = "#111528"
-PANEL_SECTION  = "#1d2447"
-TEXT_COLOR      = "#eef1ff"
-TEXT_BODY       = "#d9defa"
-TEXT_DIM        = "#a8b0d0"
-ACCENT         = "#8aa2ff"
-SUCCESS_COLOR   = "#4adc6e"
-DANGER_COLOR    = "#e05565"
 
-# Board chrome
+BACKGROUND     = "#0f1323"
+PANEL_BG       = "#0d0a1a"
+PANEL_SECTION  = "#1a0f2e"
+TEXT_COLOR      = "#f0e6c0"
+TEXT_BODY       = "#d9defa"
+TEXT_DIM        = "#9a8860"
+ACCENT         = "#c8a84b"
+SUCCESS_COLOR   = "#f0d060"
+DANGER_COLOR    = "#e05565"
+SEPARATOR_COLOR = "#c8a84b"
+SECTION_TEXT_BG = "#12091e"
+SECTION_TEXT_FG = "#d4c090"
+
+FONT_HEADING  = ("Georgia", 13, "bold")
+FONT_BODY     = ("Georgia", 11)
+FONT_CODE     = ("Courier New", 11)
+FONT_CODE_SM  = ("Courier New", 10)
+FONT_FALLBACK = ("Consolas", 11)
+
+
 BOARD_BG       = "#0e1225"
 BOARD_BORDER   = "#3a4a80"
 BOARD_PADDING  = 8
 
-# ── follow-camera (rooms come closer) ─────────────────────────────
-# Instead of shrinking the whole map to fit, keep cells large and show
-# a viewport that follows the player. Small levels still fit entirely;
-# big levels (e.g. 44-50 cols) render zoomed-in around the player.
-CAM_VIEW_COLS  = 20   # target visible columns when zoomed
-CAM_VIEW_ROWS  = 13   # target visible rows when zoomed
-CAM_MAX_CELL   = 56   # cap for zoomed cell size (px)
-CAM_MIN_CELL   = 8    # floor so tiny windows never divide by zero
-TARGET_FPS     = 120  # game loop target refresh rate
-CAM_FRAME_MS   = 8    # animation tick (~120fps: 1000/120 = 8.3ms)
-RESIZE_DEBOUNCE_MS = 60  # coalesce drag-resize events into one redraw
-CAM_LERP       = 0.35 # per-tick easing toward the player (higher = snappier)
-CAM_EPS        = 0.03 # stop animating below this distance (cells)
-CAM_ZOOM_LERP  = 0.35 # per-tick easing for smooth zoom
+
+
+
+
+CAM_VIEW_COLS  = 20
+CAM_VIEW_ROWS  = 13
+CAM_MAX_CELL   = 56
+CAM_MIN_CELL   = 8
+TARGET_FPS     = 120
+CAM_FRAME_MS   = 8
+RESIZE_DEBOUNCE_MS = 60
+CAM_LERP       = 0.35
+CAM_EPS        = 0.03
+CAM_ZOOM_LERP  = 0.35
 CAM_ZOOM_EPS   = 0.01
 CAM_ZOOM_MIN   = 0.2
 CAM_ZOOM_MAX   = 2.0
-FX_TICK_MS     = 150  # ambient animation clock (sparks, shimmer, current, bob)
-FX_DUST_S      = 0.8  # footstep dust lifetime in seconds
-FX_DUST_CAP    = 14   # max remembered footfalls
 
-# ── per-level hints (HINTS panel) ───────────────────────────────────
-# One entry per level in ALL_LEVELS, index-aligned with level_index.
-# Only the beacon level and the final level carry hint text; all other
-# entries are blank and the HINTS section stays hidden on those levels.
+
+
+
+
 LEVEL_HINTS = [
 "",
 
@@ -90,7 +84,10 @@ LEVEL_HINTS = [
 
 "",
 
-"",
+"Access meets a point to let you inside,\n"
+"Add a turn to that place where pathways collide.\n"
+"Two simple pieces, when joined side by side,\n"
+"Reveal what swings open to welcome the ride.\n",
 
 "",
 
@@ -107,27 +104,44 @@ LEVEL_HINTS = [
 
 
 HELP_PANEL_TEXT = (
-    "WASD / arrows to move,\n R restart,\n C center camera,\n"
-    "+/- zoom in & zoom out,\n 0/F view full map,\n Q quit.\n\n"
-    "Push code blocks onto the circuit line so\n"
-    "the statement compiles.  CLASS PROP = VALUE\n\n"
-    "Big maps use a follow-camera: the view\n"
-    "stays zoomed on your room and scrolls\n"
-    "as you move."
+    "── CONTROLS ──────────────────\n"
+    "WASD / ↑↓←→  → move & push\n"
+    "R            → restart level\n"
+    "C            → centre camera\n"
+    "+  /  -      → zoom in / out\n"
+    "0 / F        → fit full map\n"
+    "M            → mute toggle\n"
+    "[ / ]        → volume down/up\n"
+    "Q            → quit\n"
+    
 )
 
 
-class GUIEngine(GameView):
-    # ── construction ────────────────────────────────────────────────
-    def __init__(self, start_index: int = 0, race=None):
-        """`race` (optional) = {"role","net","name","duration_s"} for LAN races."""
+SFX_EXPLOSION = "assets/sfx_explosion.mp3"
+SFX_STONE     = "assets/sfx_stone.mp3"
+SFX_DOOR      = "assets/sfx_door.mp3"
+BOOM_BLAST_MS = 750
+
+
+class GUIEngine:
+
+
+
+
+    _MSG_ROWS = 3
+
+
+    def __init__(self, start_index: int = 0, race=None, audio=None):
         if not 0 <= start_index < len(ALL_LEVELS):
             raise ValueError(f"Invalid start_index {start_index}. Choose 0-{len(ALL_LEVELS) - 1}.")
         self.level_index = start_index
         self.game_completed = False
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
-        # race state (None in solo play)
+
+        self.audio = audio
+        self._volume_pct = 80
+
         self.race = race
         self._race_over = False
         self._race_time_up = False
@@ -137,97 +151,208 @@ class GUIEngine(GameView):
         self._race_restarts = 0
         self._race_standings: list[Standing] = []
         self._race_ends_at: float | None = None
+        self._final_popup_shown = False
+
+
+
+        self._boom_anim: dict | None = None
+        self._goal_entry_frame = 0
+        self._goal_entry_job = None
+        self._goal_entry_speed = 180
+        self._last_player_pos = None
+        self._last_push_frame = -1
+        self._last_anim_frame = -1
         if race is not None:
             import time as _time
-            self._race_ends_at = _time.time() + float(race.get("duration_s", 900))
+            self._race_ends_at = _time.time() + float(race.get("duration_s", 600))
         self._last_message = ""
         self._show_warps = True
         self._label_photos: dict[str, object] = {}
         self._panel_bg_key = None
-        # follow-camera state: smoothed center in cell coords + zoom factor
-        # _cam_cx/_cam_cy/_zoom_cur are what is drawn; _zoom is the target.
-        # A Tk `after` loop eases the drawn values toward the target so
-        # movement glides instead of snapping.
+
+
+
+
         self._zoom = 1.0
         self._zoom_cur = 1.0
         self._cam_cx: float | None = None
         self._cam_cy: float | None = None
         self._cam_anim: str | None = None
         self._panel_cache: tuple | None = None
-        # perf state: resize debounce, geometry cache, frame timing
+
         self._resize_pending: str | None = None
         self._last_win_size: tuple[int, int] | None = None
         self._last_render_ms: float = 0.0
-        # incremental board cache: when the camera/cell geometry is
-        # unchanged (typical in full-map view), only repaint cells whose
-        # visual signature changed instead of clearing the whole canvas.
+
+
+
         self._board_geom = None
         self._cell_sigs: dict[tuple[int, int], tuple] = {}
-        # ambient fx state: animation phase, footstep dust trail, last
-        # camera geometry (so the overlay can map cells to pixels)
-        self._fx_phase = 0
-        self._fx_job = None
-        self._dust: list[tuple[int, int, float]] = []
-        self._last_cam = None
 
-        # window + layout
+
+
+        self._trap_in_view = False
+        self._last_trap_frame = -1
+
+
         self.window = Window("Type Is Code", 1280, 680, bg=BACKGROUND,
                              min_width=980, min_height=560)
         self.canvas = self.window.create_canvas(bg=BOARD_BG)
         self._build_info_panel()
 
-        # input bindings
+
         self.window.on_key_down(self.on_key)
         self.window.on_resize(self._on_resize)
         self.window.focus()
 
-        # initial render (deferred so geometry is settled)
+
         self.window.root.after(50, lambda: self.render_frame(self._last_message))
-        # ambient animation clock (fx overlay only; base board untouched)
-        self.window.root.after(FX_TICK_MS, self._fx_tick)
         if self.race is not None:
             self._race_report()
             self.window.root.after(500, self._race_tick)
 
     def _build_info_panel(self):
-        self.info_frame = self.window.create_frame(width=430)
+        self.info_frame = self.window.create_frame(width=430, bg=PANEL_BG)
+
         self.status_label = self.info_frame.add_label(
-            "", font=("Consolas", 16, "bold"), fg=TEXT_COLOR, bg=PANEL_BG,
+            "", font=FONT_HEADING, fg=TEXT_COLOR, bg=PANEL_BG,
             wraplength=405)
         self.moves_label = self.info_frame.add_label(
-            "", font=("Consolas", 13), fg=TEXT_DIM, bg=PANEL_BG)
+            "", font=FONT_BODY, fg=TEXT_DIM, bg=PANEL_BG)
+        self.sep_status = self._panel_sep()
+
         self.race_title = self.info_frame.add_label(
-            "", font=("Consolas", 14, "bold"), fg=ACCENT, bg=PANEL_BG)
+            "", font=FONT_HEADING, fg=ACCENT, bg=PANEL_BG)
         self.race_view = self.info_frame.add_text_view(
-            width=44, height=9, font=("Consolas", 11),
-            fg=TEXT_BODY, bg=PANEL_SECTION)
+            width=44, height=9, font=FONT_CODE,
+            fg=SECTION_TEXT_FG, bg=SECTION_TEXT_BG)
         self.race_title.pack_forget()
         try:
             self.race_view._text.pack_forget()
         except Exception:
             pass
+
         self.message_label = self.info_frame.add_label(
-            "", font=("Consolas", 12, "italic"), fg=TEXT_BODY, bg=PANEL_BG,
+            "", font=FONT_BODY, fg=TEXT_BODY, bg=PANEL_BG,
             wraplength=405)
+
+
+
+
+
+
+        _v_inset = 2 * (int(self.message_label.cget("pady"))
+                        + int(self.message_label.cget("bd"))
+                        + int(self.message_label.cget("highlightthickness")))
+        self.message_label.configure(text="X")
+        self._msg_line_px = max(
+            1, self.message_label.winfo_reqheight() - _v_inset)
+        self.message_label.configure(text="\n" * (self._MSG_ROWS - 1))
+        self.sep_circuit = self._panel_sep()
+
         self.controls_label = self.info_frame.add_label(
-            "🎮 Controls", font=("Consolas", 14, "bold"),
+            "🎮 Controls", font=FONT_HEADING,
             fg=ACCENT, bg=PANEL_BG)
         self.help_view = self.info_frame.add_text_view(
-            width=44, height=7, font=("Consolas", 12),
-            fg=TEXT_BODY, bg=PANEL_SECTION)
+            width=44, height=7, font=FONT_CODE_SM,
+            fg=SECTION_TEXT_FG, bg=SECTION_TEXT_BG)
+        self.sep_registry = self._panel_sep()
+
         self.hints_label = self.info_frame.add_label(
-            "💡 HINTS", font=("Consolas", 14, "bold"),
+            "💡 HINTS", font=FONT_HEADING,
             fg=ACCENT, bg=PANEL_BG)
         self.hints_view = self.info_frame.add_text_view(
-            width=44, height=8, font=("Consolas", 12),
-            fg=TEXT_BODY, bg=PANEL_SECTION)
-        # Static help text is set once here, never per-frame: the old code
-        # rewrote this Text widget on every move (panel key includes moves),
-        # and each Tk Text delete+insert costs input latency.
+            width=44, height=8, font=FONT_BODY,
+            fg=SECTION_TEXT_FG, bg=SECTION_TEXT_BG)
+
+
+
         self.help_view.set_text(HELP_PANEL_TEXT)
         self._last_hint: str | None = None
 
-    # ── level lifecycle ─────────────────────────────────────────────
+        self.sep_volume = self._panel_sep()
+        self.volume_scale = tk.Scale(
+            self.info_frame.widget, from_=0, to=100,
+            orient="horizontal", label="🔊 Volume",
+            font=("Consolas", 11), bg=PANEL_BG, fg=TEXT_COLOR,
+            troughcolor="#2a1f3d", activebackground=ACCENT,
+            highlightthickness=0, relief="flat", bd=0,
+            command=self._on_volume_change)
+        self.volume_scale.set(self._volume_pct)
+        self.volume_scale.pack(fill="x", padx=12, pady=(4, 2))
+        self.volume_scale.bind("<ButtonRelease-1>", self._on_volume_change)
+        self.volume_scale.bind("<Motion>", self._on_volume_change)
+        self.mute_button = tk.Button(
+            self.info_frame.widget, text="🔇 Mute",
+            command=self._on_mute_toggle,
+            font=("Consolas", 12, "bold"), fg=TEXT_COLOR, bg=PANEL_SECTION,
+            activebackground=ACCENT, activeforeground=PANEL_BG,
+            relief="flat", bd=0, padx=10, pady=4, cursor="hand2")
+        self.mute_button.pack(anchor="w", padx=12, pady=(2, 8))
+
+
+    def _panel_sep(self):
+        sep = tk.Frame(self.info_frame.widget, height=1, bg="#c8a84b")
+        sep.pack(fill="x", padx=12, pady=6)
+        return sep
+
+
+    def _on_volume_change(self, val):
+        if hasattr(val, "widget"):
+            event = val
+            if event.type == "Motion" and not (int(getattr(event, "state", 0)) & 0x100):
+                return
+            try:
+                val = event.widget.get()
+            except Exception:
+                return
+        pct = self._clamp_volume(val)
+        if pct is None:
+            return
+        self._volume_pct = pct
+        if self.audio is not None:
+            self.audio.set_volume(pct / 100.0)
+
+    def _clamp_volume(self, val) -> int | None:
+        try:
+            pct = int(round(float(val)))
+        except (TypeError, ValueError):
+            return None
+        return max(0, min(100, pct))
+
+    def _bump_volume(self, delta: int):
+        pct = self._clamp_volume(self._volume_pct + delta)
+        if pct is None:
+            return
+        self._volume_pct = pct
+        try:
+            self.volume_scale.set(pct)
+        except Exception:
+            pass
+        if self.audio is not None:
+            self.audio.set_volume(pct / 100.0)
+        self.render_frame(f"Volume {pct}%.")
+
+    def _on_mute_toggle(self):
+        if self.audio is None:
+            self.render_frame("Audio is off (no backend available).")
+            return
+        muted = self.audio.toggle_mute()
+        self._sync_mute_button(muted)
+        self.render_frame("Sound " + ("muted." if muted else "on."))
+
+    def _sync_mute_button(self, muted: bool | None = None):
+        button = getattr(self, "mute_button", None)
+        if button is None:
+            return
+        if muted is None:
+            muted = self.audio.is_muted() if self.audio is not None else False
+        try:
+            button.configure(text="🔊 Unmute" if muted else "🔇 Mute")
+        except Exception:
+            pass
+
+
     def current_builder(self):
         return ALL_LEVELS[self.level_index]
 
@@ -235,36 +360,118 @@ class GUIEngine(GameView):
         if from_start or self.game_completed:
             self.level_index = 0
             self.game_completed = False
+        self._boom_anim = None
+        try:
+            if self._goal_entry_job is not None:
+                self.window.root.after_cancel(self._goal_entry_job)
+        except Exception:
+            pass
+        self._goal_entry_job = None
+        self._goal_entry_frame = 0
+        self._last_player_pos = None
+        self._last_push_frame = -1
+        self._last_anim_frame = -1
         self._cancel_camera_anim()
         self.level = self.current_builder()()
         self.level.reset()
         self._snap_camera_to_player()
-        try:
-            del self._dust[:]
-        except Exception:
-            pass
 
     def next_level(self) -> bool:
         if self.level_index + 1 >= len(ALL_LEVELS):
             self.game_completed = True
             return False
+        self._boom_anim = None
+        self._last_player_pos = None
+        self._last_push_frame = -1
+        self._last_anim_frame = -1
         self._cancel_camera_anim()
         self.level_index += 1
         self.level = ALL_LEVELS[self.level_index]()
         self.level.reset()
         self._snap_camera_to_player()
-        try:
-            del self._dust[:]
-        except Exception:
-            pass
         return True
 
-    # ── LAN race ("I'm faster than you") ────────────────────────────
+
+    def _play_sfx(self, path: str):
+        try:
+            audio = getattr(self, "audio", None)
+            fn = getattr(audio, "play_sfx", None) if audio is not None else None
+            if callable(fn):
+                fn(path)
+        except Exception:
+            pass
+
+    def _draw_mine_aftermath(self, cv, px, py, cell, fast=False):
+        try:
+            phase = (self._boom_anim or {}).get("phase")
+        except Exception:
+            phase = None
+        if phase == "blast":
+            draw_boom_explosion(cv, px, py, cell, fast=fast)
+        else:
+            draw_ash(cv, px, py, cell, fast=fast)
+
+    def _draw_goal_cell(self, cv, gx, gy, px, py, cell, fast=False):
+        try:
+            p = self.level.player
+            if self._goal_entry_frame > 0 and p is not None and (p.x, p.y) == (gx, gy):
+                draw_goal(cv, px, py, cell, fast=fast, entry_frame=self._goal_entry_frame, player_inside=True)
+                return
+        except Exception:
+            pass
+        draw_goal(cv, px, py, cell, fast=fast)
+
+    def _player_on_goal_art(self):
+        try:
+            p = self.level.player
+            if p is None:
+                return False
+            pos = (p.x, p.y)
+            if self.level.tile_at(*pos).__class__.__name__ == "Goal":
+                return not bool(PropertyRegistry.get("Flag", "moved", False))
+            if bool(PropertyRegistry.get("Flag", "moved", False)) and getattr(self.level, "flag2", None) == pos:
+                return True
+            if bool(PropertyRegistry.get("Gate", "at", False)) and getattr(self.level, "gate2", None) == pos:
+                return True
+            if bool(PropertyRegistry.get("Beacon", "lit", False)) and getattr(self.level, "beacon2", None) == pos:
+                return True
+            return False
+        except Exception:
+            return False
+
+    def _render_board_only(self):
+        self.render_frame(self._last_message, board_only=True)
+
+    def _start_goal_entry_animation(self):
+        self._goal_entry_frame = 1
+        self._render_board_only()
+        def _next_frame():
+            try:
+                self._goal_entry_frame += 1
+                self._render_board_only()
+                if self._goal_entry_frame < 3:
+                    self._goal_entry_job = self.window.root.after(self._goal_entry_speed, _next_frame)
+                else:
+                    self._goal_entry_job = self.window.root.after(self._goal_entry_speed, self._finish_win)
+            except Exception:
+                pass
+        self._goal_entry_job = self.window.root.after(self._goal_entry_speed, _next_frame)
+
+    def _finish_win(self):
+        self._goal_entry_frame = 0
+        self._goal_entry_job = None
+        if not self.next_level():
+            self.render_frame(
+                "🎉 Congratulations!  You compiled your way through every level!  "
+                "Press R to play again or Q to quit.")
+            return
+        self.render_frame("Level solved!  New level loaded.")
+
+
     def _race_is_host(self) -> bool:
         return self.race is not None and self.race.get("role") == "host"
 
     def _race_report(self):
-        """Push our totals to the host (client) or the board (host)."""
         if self.race is None:
             return
         try:
@@ -286,26 +493,34 @@ class GUIEngine(GameView):
         except Exception:
             pass
 
-    def _race_text(self) -> str:
-        if self._race_over:
-            head = "FINAL STANDINGS"
-        elif self._race_time_up:
-            head = "TIME! Waiting for host results..."
-        else:
-            head = "Live standings"
-        lines = [head] + board_lines(self._race_standings)
-        if not self._race_standings:
-            lines.append("(waiting for racers...)")
-        lines.append("Score = Lv*10000 - restarts*100 - steps")
+    def _fmt_standings_table(self, standings: list) -> str:
+        if not standings:
+            return "  Waiting for players…"
+        glyphs = ["①", "②", "③", "④", "⑤"]
+        lines = ["%-4s  %-12s  %3s   %5s" % ("RANK", "NAME", "LVL", "MOVES"),
+                 "%-4s  %-12s  %3s   %5s" % ("────", "────────────",
+                                             "───", "─────")]
+        for i, s in enumerate(standings):
+            glyph = glyphs[i] if i < 5 else "%d." % (i + 1)
+            try:
+                name = str(s.name)
+            except Exception:
+                name = "?"
+            if len(name) > 12:
+                name = name[:11] + "…"
+            try:
+                lvl = int(s.levels)
+            except Exception:
+                lvl = 0
+            try:
+                mov = int(s.moves)
+            except Exception:
+                mov = 0
+            lines.append("%-4s  %-12s  %3d   %5d" % (glyph, name, lvl, mov))
         return "\n".join(lines)
 
-    def _cancel_fx_tick(self):
-        job, self._fx_job = self._fx_job, None
-        if job is not None:
-            try:
-                self.window.root.after_cancel(job)
-            except Exception:
-                pass
+    def _race_text(self) -> str:
+        return self._fmt_standings_table(self._race_standings)
 
     def _cancel_race_tick(self):
         job, self._race_job = self._race_job, None
@@ -316,7 +531,6 @@ class GUIEngine(GameView):
                 pass
 
     def _race_drain_events(self) -> bool:
-        """Absorb pending lobby messages. Returns True when UI should refresh."""
         if self.race is None:
             return False
         net = self.race.get("net")
@@ -373,7 +587,6 @@ class GUIEngine(GameView):
         return changed
 
     def _race_tick(self):
-        """500ms race ticker: standings, countdown clock, host time-up."""
         self._race_job = None
         if self.race is None:
             return
@@ -393,6 +606,10 @@ class GUIEngine(GameView):
                 else:
                     self._race_time_up = True
                     changed = True
+            if self.race is not None and (self._race_over or self._race_time_up) \
+                    and not self._final_popup_shown:
+                self._final_popup_shown = True
+                self._show_final_standings_popup()
             try:
                 if self._race_over:
                     self.race_title.configure(text="RACE OVER")
@@ -400,21 +617,65 @@ class GUIEngine(GameView):
                     self.race_title.configure(text="TIME! 00:00")
                 else:
                     self.race_title.configure(
-                        text="%s minute left" % fmt_time(self._race_ends_at - now))
+                        text="Timer: %s Minute left" % fmt_time(self._race_ends_at - now))
             except Exception:
                 pass
             if changed:
                 self.render_frame(self._last_message)
             self._race_job = self.window.root.after(500, self._race_tick)
         except Exception:
-            # Window destroyed mid-tick: stop quietly.
+
             self._race_job = None
 
-    # ── responsive resize ───────────────────────────────────────────
+    def _show_final_standings_popup(self):
+        popup = tk.Toplevel(self.window.root)
+        popup.title("── FINAL STANDINGS ──")
+        popup.geometry("480x460")
+        popup.resizable(False, False)
+        popup.configure(bg="#0d0a1a")
+
+        self.window.root.update_idletasks()
+        rx = self.window.root.winfo_x()
+        ry = self.window.root.winfo_y()
+        rw = self.window.root.winfo_width()
+        rh = self.window.root.winfo_height()
+        px = rx + (rw - 480) // 2
+        py = ry + (rh - 460) // 2
+        popup.geometry(f"480x460+{px}+{py}")
+        popup.grab_set()
+        popup.focus_set()
+        tk.Label(popup, text="⚔  TYPE IS CODE  ⚔",
+                 font=("Georgia", 16, "bold"), fg="#c8a84b", bg="#0d0a1a"
+                 ).pack(pady=(22, 2))
+        tk.Label(popup, text="RACE COMPLETE — FINAL STANDINGS",
+                 font=("Courier New", 10), fg="#9a8860", bg="#0d0a1a"
+                 ).pack(pady=(0, 10))
+        tk.Frame(popup, height=1, bg="#c8a84b").pack(fill="x", padx=24, pady=(0, 8))
+        body_text = self._fmt_standings_table(self._race_standings)
+        for _old, _new in (("①", "🥇 ①"), ("②", "🥈 ②"), ("③", "🥉 ③")):
+            body_text = body_text.replace(_old, _new)
+        board = tk.Text(popup, bg="#12091e", fg="#d4c090",
+                        font=("Courier New", 11),
+                        bd=0, highlightthickness=0,
+                        padx=14, pady=10, relief="flat", height=10)
+        board.pack(fill="both", expand=True, padx=24)
+        board.insert("1.0", body_text)
+        board.configure(state="disabled")
+        tk.Frame(popup, height=1, bg="#c8a84b").pack(fill="x", padx=24, pady=(8, 0))
+        tk.Button(popup, text="CLOSE  ✕",
+                  font=("Georgia", 11, "bold"),
+                  bg="#1a0f2e", fg="#c8a84b",
+                  activebackground="#c8a84b", activeforeground="#0d0a1a",
+                  relief="flat", cursor="hand2", bd=0,
+                  command=popup.destroy
+                  ).pack(pady=18, ipadx=18, ipady=6)
+        popup.bind("<Escape>", lambda _e: popup.destroy())
+
+
     def _on_resize(self, w: int, h: int):
-        # Dragging the edge fires dozens of <Configure> events/sec; each
-        # full redraw costs ~one frame, so the queue felt "late". Debounce
-        # into a single redraw after the burst settles.
+
+
+
         try:
             if self._resize_pending is not None:
                 self.window.root.after_cancel(self._resize_pending)
@@ -430,9 +691,8 @@ class GUIEngine(GameView):
         self._resize_pending = None
         self.render_frame(self._last_message)
 
-    # ── follow-camera ─────────────────────────────────────────────
+
     def _snap_camera_to_player(self):
-        """Center the camera on the player (called on level load)."""
         self._cancel_camera_anim()
         p = getattr(self.level, "player", None)
         if p is not None:
@@ -444,14 +704,12 @@ class GUIEngine(GameView):
         self._zoom_cur = self._zoom
 
     def _camera_target(self) -> tuple[float, float]:
-        """Where the camera wants to be (player center, or map center)."""
         p = getattr(self.level, "player", None)
         if p is not None:
             return p.x + 0.5, p.y + 0.5
         return self.level.width / 2, self.level.height / 2
 
     def _camera_needs_anim(self) -> bool:
-        """True while the drawn camera/zoom still lags behind the target."""
         if self._cam_cx is None or self._cam_cy is None:
             return True
         tx, ty = self._camera_target()
@@ -472,11 +730,6 @@ class GUIEngine(GameView):
                 pass
 
     def _nudge_camera_toward_target(self, alpha: float = 0.6):
-        """Pre-step drawn camera toward the player before a full render.
-
-        Movement keys call this so the character reads instantly while
-        the remaining distance still glides in cheap board-only ticks.
-        """
         try:
             tx, ty = self._camera_target()
         except Exception:
@@ -494,7 +747,10 @@ class GUIEngine(GameView):
     def _request_camera_anim(self):
         if self._cam_anim is not None:
             return
-        if not self._camera_needs_anim():
+
+
+
+        if not self._camera_needs_anim() and not self._trap_in_view:
             return
         try:
             self._cam_anim = self.window.root.after(CAM_FRAME_MS, self._camera_tick)
@@ -502,13 +758,13 @@ class GUIEngine(GameView):
             self._cam_anim = None
 
     def _camera_tick(self):
-        """Ease drawn camera/zoom toward the target, then redraw board only.
-
-        Ticks redraw just the canvas (no panel/text/backdrop work) so
-        key handling stays responsive while the view glides.
-        """
         self._cam_anim = None
         try:
+
+            frame = advance_trap_animation()
+            trap_changed = frame != self._last_trap_frame
+            self._last_trap_frame = frame
+
             tx, ty = self._camera_target()
             if self._cam_cx is None or self._cam_cy is None:
                 self._cam_cx, self._cam_cy = tx, ty
@@ -518,179 +774,23 @@ class GUIEngine(GameView):
                 self._cam_cy += (ty - self._cam_cy) * CAM_LERP
                 self._zoom_cur += (self._zoom - self._zoom_cur) * CAM_ZOOM_LERP
                 if not self._camera_needs_anim():
-                    # Close enough: snap exactly to avoid endless drift.
+
                     self._cam_cx, self._cam_cy = tx, ty
                     self._zoom_cur = self._zoom
+
+            if not trap_changed and not self._camera_needs_anim():
+                self._request_camera_anim()
+                return
             self.render_frame(self._last_message, board_only=True)
         except Exception:
-            # Never let a background tick kill the game (e.g. window
-            # destroyed mid-animation).
-            self._cam_anim = None
 
-    # ── ambient fx layer ────────────────────────────────────────────
-    def _fx_tick(self):
-        """Ambient animation clock: advance phase, repaint overlays only.
 
-        The base board (and its incremental cache) is never touched
-        here — only items tagged "fx" are deleted and redrawn, so the
-        120fps input path is unaffected.
-        """
-        self._fx_job = None
-        try:
-            self._fx_phase += 1
-            self._prune_dust()
-            self._draw_fx_overlay()
-        except Exception:
-            pass
-        try:
-            self._fx_job = self.window.root.after(FX_TICK_MS, self._fx_tick)
-        except Exception:
-            self._fx_job = None
 
-    def _prune_dust(self):
-        try:
-            import time as _time
-            now = _time.time()
-            self._dust = [(x, y, t) for (x, y, t) in self._dust
-                          if now - t < FX_DUST_S][-FX_DUST_CAP:]
-        except Exception:
-            pass
 
-    def _draw_fx_overlay(self):
-        """Redraw the dynamic layer: actor bob, dust, sparks, shimmer.
-
-        Reads (never writes) the base board: cell art stays exactly as
-        render_frame painted it; animated extras go on top tagged "fx".
-        Safe to call from render_frame and from the ambient tick.
-        """
-        try:
-            raw = self.canvas.raw
-            raw.delete("fx")
-            cam = self._last_cam
-            if cam is None:
-                return
-            cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy, cw, ch = cam
-            try:
-                cw_now, ch_now = self.canvas.get_size()
-            except Exception:
-                return
-            if (cw_now, ch_now) != (cw, ch) or cell < 1:
-                return  # geometry changed; a full render is imminent
-            import math as _math
-            import time as _time
-            now = _time.time()
-            cols = self.level.width
-            rows = self.level.height
-            x0i = max(0, int(_math.floor(cam_x0)))
-            y0i = max(0, int(_math.floor(cam_y0)))
-            x1i = min(cols, int(_math.ceil(cam_x0 + view_cols)))
-            y1i = min(rows, int(_math.ceil(cam_y0 + view_rows)))
-
-            def _px(gx: int) -> int:
-                return int(round(ox + (gx - cam_x0) * cell))
-
-            def _py(gy: int) -> int:
-                return int(round(oy + (gy - cam_y0) * cell))
-
-            phase = self._fx_phase
-            is_global = getattr(self.level, "rule_mode", "circuit") == "global"
-            show_warps = bool(getattr(self, "_show_warps", True))
-            active_slots = {(sx, sy)
-                            for _c in getattr(self.level, "circuits", [])
-                            for (sx, sy) in getattr(_c, "slot_positions", [])}
-            if is_global:
-                for gy in range(y0i, y1i):
-                    for gx in range(x0i, x1i):
-                        px, py = _px(gx), _py(gy)
-                        terr = self.level.terrain_at(gx, gy)
-                        tcls = terr.__class__.__name__ if terr is not None else ""
-                        if tcls == "Warp":
-                            if show_warps:
-                                draw_warp_fx(raw, px, py, cell, phase, tags="fx")
-                        elif tcls in ("HiddenBoom", "HardMine", "BorderMine"):
-                            draw_mine_fx(raw, px, py, cell, phase, tags="fx")
-                        elif tcls == "LaserDoor":
-                            try:
-                                _blocking = terr.is_blocking()
-                            except Exception:
-                                _blocking = False
-                            if _blocking:
-                                draw_laser_fx(raw, px, py, cell, phase, tags="fx")
-                        elif tcls == "Trap":
-                            try:
-                                _lethal = terr.is_lethal()
-                            except Exception:
-                                _lethal = False
-                            if _lethal:
-                                draw_trap_fx(raw, px, py, cell, phase, tags="fx")
-                        tile = self.level.tile_at(gx, gy)
-                        if tile.__class__.__name__ == "Goal":
-                            draw_goal_fx(raw, px, py, cell, phase, tags="fx")
-                        blk = self.level.block_at(gx, gy)
-                        if blk is not None and (gx, gy) in active_slots:
-                            draw_block_fx(raw, px, py, cell, phase,
-                                          blk.kind, tags="fx")
-            else:
-                for gy in range(y0i, y1i):
-                    for gx in range(x0i, x1i):
-                        px, py = _px(gx), _py(gy)
-                        occ = self.level.object_at(gx, gy)
-                        cls = occ.__class__.__name__ if occ is not None else ""
-                        if cls == "Warp":
-                            if show_warps:
-                                draw_warp_fx(raw, px, py, cell, phase, tags="fx")
-                        elif cls == "LaserDoor":
-                            try:
-                                _blocking = occ.is_blocking()
-                            except Exception:
-                                _blocking = False
-                            if _blocking:
-                                draw_laser_fx(raw, px, py, cell, phase, tags="fx")
-                        elif cls == "Trap":
-                            try:
-                                _lethal = occ.is_lethal()
-                            except Exception:
-                                _lethal = False
-                            if _lethal:
-                                draw_trap_fx(raw, px, py, cell, phase, tags="fx")
-                        elif cls == "CodeBlock":
-                            if (gx, gy) in active_slots:
-                                draw_block_fx(raw, px, py, cell, phase,
-                                              occ.kind, tags="fx")
-                        tile = self.level.tile_at(gx, gy)
-                        if tile.__class__.__name__ == "Goal":
-                            draw_goal_fx(raw, px, py, cell, phase, tags="fx")
-            # living actor: breathing bob over a grounded soft shadow
-            p = getattr(self.level, "player", None)
-            if p is not None and not self.level.dead \
-                    and not self.level.player_invisible \
-                    and x0i <= p.x < x1i and y0i <= p.y < y1i:
-                px, py = _px(p.x), _py(p.y)
-                amp = max(1, cell // 22)
-                bob = int(round(amp * _math.sin(phase * 0.85)))
-                _soft_shadow(raw, px, py, cell, tags="fx")
-                draw_player(raw, px, py + bob, cell, fast=False,
-                            floor=False, tags="fx")
-            # footstep dust, oldest faintest
-            for (dx, dy, t) in self._dust:
-                age = (now - t) / FX_DUST_S
-                if 0 <= age <= 1 and x0i <= dx < x1i and y0i <= dy < y1i:
-                    draw_dust_puff(raw, _px(dx) + cell // 2,
-                                   _py(dy) + int(cell * 0.8),
-                                   max(2, cell // 6), age, tags="fx")
-        except Exception:
-            pass
+            self._cancel_camera_anim()
 
     def _compute_camera(self, cols: int, rows: int,
                         cw: int, ch: int, avail_w: int, avail_h: int):
-        """Return (cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy).
-
-        Small boards fit entirely (no scrolling). Big boards keep a
-        large cell size and scroll a viewport that follows the player,
-        so rooms stay close to the screen.  The drawn camera
-        (_cam_cx/_cam_cy/_zoom_cur) is eased toward the player by the
-        animation loop; this method only reads it, never steps it.
-        """
         import math
 
         zoom_cur = getattr(self, "_zoom_cur", getattr(self, "_zoom", 1.0))
@@ -702,7 +802,7 @@ class GUIEngine(GameView):
         want = max(1, int(round(want * zoom_cur)))
 
         if want <= fit:
-            # Whole board fits at a comfortable size -- no scrolling.
+
             cell = fit
             view_cols, view_rows = cols, rows
             cam_x0 = 0.0
@@ -713,7 +813,7 @@ class GUIEngine(GameView):
             oy = (ch - board_h) // 2
             return cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy
 
-        # Zoomed mode: keep cells big, scroll to the player.
+
         cell = want
         view_cols = max(1, avail_w // cell)
         view_rows = max(1, avail_h // cell)
@@ -736,12 +836,6 @@ class GUIEngine(GameView):
         return cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy
 
     def _zoom_for_full_map(self, avail_w: int, avail_h: int) -> float:
-        """Zoom target that fits the whole current level on screen.
-
-        Mirrors _compute_camera's fit-vs-want math: returns fit / want_base
-        clamped to [CAM_ZOOM_MIN, CAM_ZOOM_MAX], so "fit map" always lands
-        exactly where the renderer switches to whole-board mode.
-        """
         cols = max(1, self.level.width)
         rows = max(1, self.level.height)
         fit = min(avail_w // cols, avail_h // rows)
@@ -755,14 +849,13 @@ class GUIEngine(GameView):
         return max(CAM_ZOOM_MIN, min(float(CAM_ZOOM_MAX), needed))
 
     def fit_map_to_screen(self) -> float:
-        """Zoom out (or in) just enough to show the full map. Returns zoom."""
         try:
             cw, ch = self.canvas.get_size()
         except Exception:
             cw, ch = 0, 0
         if cw < 10 or ch < 10:
-            # Canvas not laid out yet: fall back to the minimum zoom so a
-            # very early keypress still zooms out instead of doing nothing.
+
+
             self._zoom = CAM_ZOOM_MIN
         else:
             avail_w = cw - 2 * BOARD_PADDING
@@ -771,78 +864,147 @@ class GUIEngine(GameView):
         self._nudge_camera_toward_target(0.6)
         return self._zoom
 
-    def _cell_sig(self, gx: int, gy: int) -> tuple:
-        """Visual signature of one board cell for incremental repaints.
 
-        Covers everything the painter reads for the cell: the static
-        tile, terrain class + its live registry-derived state, the block
-        on top, player presence + death variant, and the global flags
-        (relocated flag, forged gate, portal visibility). Two frames with
-        equal signatures paint identically, so the cell can be skipped.
-        """
-        tile = self.level.tile_at(gx, gy)
-        parts: list = [tile.__class__.__name__]
-        terr = self.level.terrain_at(gx, gy)
-        if terr is None:
-            parts.append(None)
-        else:
-            try:
-                _b = terr.is_blocking()
-            except Exception:
-                _b = None
-            try:
-                _l = terr.is_lethal()
-            except Exception:
-                _l = None
-            _void_fn = getattr(terr, "is_void", None)
-            try:
-                _v = _void_fn() if callable(_void_fn) else None
-            except Exception:
-                _v = None
-            # Portal visibility only affects Warp cells: scoping it here
-            # keeps a P-toggles-warps keypress to those cells alone.
-            _w = bool(getattr(self, "_show_warps", True)) \
-                if terr.__class__.__name__ == "Warp" else None
-            _a_fn = getattr(terr, "is_active", None)
-            try:
-                _a = _a_fn() if callable(_a_fn) else None
-            except Exception:
-                _a = None
-            parts.append((terr.__class__.__name__, _b, _l, _v, _w, _a))
-        blk = self.level.block_at(gx, gy)
-        parts.append((blk.kind, blk.value) if blk is not None else None)
-        p = getattr(self.level, "player", None)
-        if p is not None and p.x == gx and p.y == gy:
-            parts.append(("P", self.level.dead, self.level.player_invisible))
-        else:
-            parts.append(None)
-        parts.append((
-            bool(PropertyRegistry.get("Flag", "moved", False)),
-            getattr(self.level, "flag2", None),
-            bool(PropertyRegistry.get("Gate", "at", False)),
-            getattr(self.level, "gate2", None),
-            bool(PropertyRegistry.get("Beacon", "lit", False)),
-            getattr(self.level, "beacon2", None),
-        ))
-        return tuple(parts)
 
-    # ── rendering ───────────────────────────────────────────────────
+
+    REGISTRY_KEYS = {
+        "Wall": ("Wall",),
+        "Platform": ("Platform",),
+        "Door": ("Door",),
+        "Trap": ("Trap",),
+        "HiddenBoom": ("Trap",),
+        "Stone": ("Stone",),
+        "SealWall": ("Seal",),
+        "Seal2Wall": ("Seal2",),
+        "Seal3Wall": ("Seal3",),
+        "Seal4Wall": ("Seal4",),
+        "Seal5Wall": ("Seal5",),
+        "Seal6Wall": ("Seal6",),
+        "LaserDoor": ("Laser",),
+        "LatchDoor": ("Latch",),
+        "LeverPedestal": ("Lever", "Lever2", "Lever3", "Lever4"),
+        "LeverWall": ("Lever", "Lever2", "Lever3", "Lever4"),
+        "Warp": (),
+        "HardMine": (),
+    }
+
+
+    TILE_REGISTRY_KEYS = ("Flag", "Gate", "Beacon")
+
+    def _any_lethal_trap(self, x0: int, y0: int, x1: int, y1: int) -> bool:
+        level = self.level
+        for gy in range(y0, y1):
+            for gx in range(x0, x1):
+                obj = level.terrain_at(gx, gy)
+                if obj is None or obj.__class__.__name__ != "Trap":
+                    continue
+                try:
+                    if obj.is_lethal():
+                        return True
+                except Exception:
+                    return True
+        return False
+
+    def _registry_digest(self) -> dict:
+        try:
+            snap = PropertyRegistry.snapshot()
+        except Exception:
+            snap = {}
+        return {cls: tuple(sorted(props.items()))
+                for cls, props in snap.items()}
+
+    def _goal_overlay_at(self, x: int, y: int) -> bool:
+        if bool(PropertyRegistry.get("Flag", "moved", False)) and \
+                getattr(self.level, "flag2", None) == (x, y):
+            return True
+        if bool(PropertyRegistry.get("Gate", "at", False)) and \
+                getattr(self.level, "gate2", None) == (x, y):
+            return True
+        if bool(PropertyRegistry.get("Beacon", "lit", False)) and \
+                getattr(self.level, "beacon2", None) == (x, y):
+            return True
+        return False
+
+    def _cell_signature(self, x: int, y: int, reg: dict | None = None) -> tuple:
+        tile = self.level.tile_at(x, y)
+        tile_cls = tile.__class__.__name__
+        terr = self.level.terrain_at(x, y)
+        blk = self.level.block_at(x, y)
+        player = getattr(self.level, "player", None)
+        on_player = player is not None and player.x == x and player.y == y
+        overlay = self._goal_overlay_at(x, y)
+        obj_type = terr.__class__.__name__ if terr is not None else None
+
+        if (obj_type is None and blk is None and not on_player
+                and not overlay and tile_cls == "Floor"):
+            return ("floor",)
+
+
+        if reg is None:
+            reg = self._registry_digest()
+        keys = set(self.REGISTRY_KEYS.get(obj_type, ()))
+        keys.update(self.TILE_REGISTRY_KEYS)
+        registry = tuple((k, reg.get(k)) for k in sorted(keys))
+
+
+        flags: list = []
+        if terr is not None:
+            for name in ("is_blocking", "is_lethal", "is_void", "is_active"):
+                fn = getattr(terr, name, None)
+                try:
+                    flags.append(fn() if callable(fn) else None)
+                except Exception:
+                    flags.append(None)
+            if obj_type == "Warp":
+
+                flags.append(bool(getattr(self, "_show_warps", True)))
+            else:
+                flags.append(None)
+            if obj_type == "Trap" and (len(flags) < 2 or flags[1]):
+
+                flags.append(self._last_trap_frame)
+            else:
+                flags.append(None)
+
+        glyph = ""
+        if blk is not None:
+            try:
+                glyph = blk.glyph().strip()
+            except Exception:
+                glyph = "%s%s" % (getattr(blk, "kind", ""),
+                                  getattr(blk, "value", ""))
+
+        return (
+            tile_cls,
+            obj_type,
+            tuple(flags),
+            glyph,
+            (bool(on_player), bool(getattr(self.level, "dead", False)),
+             bool(getattr(self.level, "player_invisible", False))),
+            bool(overlay),
+            registry,
+        )
+
+
+    _cell_sig = _cell_signature
+
+
     def render_frame(self, message: str = "", board_only: bool = False):
         import time as _time
         _t0 = _time.perf_counter()
-        # Full renders own the message slot; camera ticks pass the
-        # stored message back and must not clear it, and they skip all
-        # panel work so input stays responsive while gliding.
+
+
+
         if not board_only:
             self._last_message = message or ""
         else:
             message = self._last_message
         if not board_only:
-            # update_idletasks() forces a full layout pass and was the top
-            # input-latency cost (every keypress paid it). The canvas size
-            # only changes when the window does, so skip the flush when the
-            # toplevel size is unchanged since the last frame.
-            # Ticks skip this entirely: it forces layout and costs latency.
+
+
+
+
+
             try:
                 _ww = self.window.root.winfo_width()
                 _wh = self.window.root.winfo_height()
@@ -859,64 +1021,87 @@ class GUIEngine(GameView):
                 except Exception:
                     pass
                 self._last_win_size = (_ww, _wh)
-        raw = self.canvas.raw  # direct tk.Canvas for tile_renderer
+        raw = self.canvas.raw
 
         cols = self.level.width
         rows = self.level.height
 
-        # compute cell size from available canvas area
+
         cw, ch = self.canvas.get_size()
         if cw < 10 or ch < 10:
-            return  # canvas not ready yet
+            return
         win_w, win_h = self.window.root.winfo_width(), self.window.root.winfo_height()
 
         avail_w = cw - 2 * BOARD_PADDING
         avail_h = ch - 2 * BOARD_PADDING
         cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy = \
             self._compute_camera(cols, rows, cw, ch, avail_w, avail_h)
-        self._last_cam = (cell, cam_x0, cam_y0, view_cols, view_rows,
-                          ox, oy, cw, ch)
-        # Blocks on a circuit line render in their "active" electric state.
-        active_slots = {(sx, sy)
-                        for _c in getattr(self.level, "circuits", [])
-                        for (sx, sy) in getattr(_c, "slot_positions", [])}
-        # Single art path at every zoom: tiles must look identical whether
-        # zoomed on a room or viewing the full map, so no LOD switching.
-        # Speed in full-map view comes from the incremental repaint below,
-        # not from cheaper art.
+
+
+
+
         fast = False
         board_w = view_cols * cell
         board_h = view_rows * cell
-        # visible cell range (clipped to the board)
+        _state = "idle"
+        try:
+            _lp = getattr(self, "_last_player_pos", None)
+            if (not self.level.dead and _lp is not None
+                    and getattr(self, "_last_anim_frame", -1) == self.level.moves
+                    and self.level.player is not None
+                    and _lp != (self.level.player.x, self.level.player.y)):
+                _dx = self.level.player.x - _lp[0]
+                _state = "walk_r" if _dx > 0 else "walk_l"
+            if (not self.level.dead
+                    and getattr(self, "_last_push_frame", -1) == self.level.moves):
+                _state = "push"
+        except Exception:
+            _state = "idle"
+
         import math as _math
         x0i = max(0, int(_math.floor(cam_x0)))
         y0i = max(0, int(_math.floor(cam_y0)))
         x1i = min(cols, int(_math.ceil(cam_x0 + view_cols)))
         y1i = min(rows, int(_math.ceil(cam_y0 + view_rows)))
 
-        # Incremental repaint: if the camera/cell geometry is unchanged
-        # since the last frame (the common case in full-map view), skip
-        # the clear + chrome and overpaint only cells whose visual
-        # signature changed. Every cell paint starts with a full-cell
-        # opaque rect, so overpainting is artifact-free. Camera ticks
-        # always take the full path (their geometry is mid-glide).
+
+
+
+
+
+
+
         geom_key = (cell, cam_x0, cam_y0, view_cols, view_rows, ox, oy,
                     cw, ch, self.level_index, id(self.level))
-        full = board_only or (geom_key != self._board_geom)
+        full = (geom_key != self._board_geom)
+
+
+
+        reg = self._registry_digest()
         changed: set[tuple[int, int]] | None = None
         if not full:
             changed = set()
             fresh: dict[tuple[int, int], tuple] = {}
             for _gy in range(y0i, y1i):
                 for _gx in range(x0i, x1i):
-                    _sig = self._cell_sig(_gx, _gy)
+                    _sig = self._cell_signature(_gx, _gy, reg)
                     fresh[(_gx, _gy)] = _sig
                     if _sig != self._cell_sigs.get((_gx, _gy)):
                         changed.add((_gx, _gy))
+
+
+            p = getattr(self.level, "player", None)
+            if p is not None:
+                changed.add((p.x, p.y))
             self._cell_sigs = fresh
         else:
             self._cell_sigs = {}
             self._board_geom = geom_key
+
+
+
+
+        self._trap_in_view = self._any_lethal_trap(x0i, y0i, x1i, y1i)
 
         def _px(gx: int) -> int:
             return int(round(ox + (gx - cam_x0) * cell))
@@ -926,44 +1111,39 @@ class GUIEngine(GameView):
 
         if full:
             self.canvas.clear()
-            # night-crystal backdrop behind the board: left crop of the ONE
-            # window-sized image, so it continues seamlessly into the panel
+
+
             try:
                 bg_photo = get_canvas_photo(win_w, win_h, cw, ch)
             except Exception:
                 bg_photo = None
             if bg_photo is not None:
-                self._bg_photo = bg_photo  # keep a ref so Tk does not blank it
+                self._bg_photo = bg_photo
                 raw.create_image(0, 0, image=bg_photo, anchor="nw")
 
-            # ambient atmosphere: faded parallax grid + vignette behind
-            # the board, so the map sits in a deeper, cohesive space
-            draw_parallax_grid(raw, cw, ch, cam_x0, cam_y0, cell)
-            draw_vignette(raw, cw, ch)
 
-            # board drop shadow for lifted-map 3D look
             raw.create_rectangle(ox - 3 + 6, oy - 3 + 8,
                                  ox + board_w + 3 + 6, oy + board_h + 3 + 8,
                                  fill="#05070f", outline="")
 
-            # teal glow rim around the board, like the reference mockup
+
             for pad, color in ((10, "#0e3a40"), (7, "#155e63"), (4, "#2aa5a0")):
                 raw.create_rectangle(ox - pad, oy - pad,
                                      ox + board_w + pad, oy + board_h + pad,
                                      fill="", outline=color, width=2)
 
-            # board background + border
+
             raw.create_rectangle(ox - 3, oy - 3,
                                  ox + board_w + 3, oy + board_h + 3,
                                  fill="", outline=BOARD_BORDER, width=2)
 
-        # ── draw every cell ──
-        # Global levels layer each cell: floor/goal tile -> terrain ->
-        # block on top -> player.  The block chip is inset, so the terrain
-        # rim (open door, vanished table) stays visible underneath.
+
+
+
+
         is_global = getattr(self.level, "rule_mode", "circuit") == "global"
-        # Relocated-flag state (map10): the visible Goals are decoys and
-        # the finish art belongs on the hidden chamber cell instead.
+
+
         flag_moved = bool(PropertyRegistry.get("Flag", "moved", False))
         flag2 = getattr(self.level, "flag2", None)
         gate_on = bool(PropertyRegistry.get("Gate", "at", False))
@@ -977,123 +1157,128 @@ class GUIEngine(GameView):
                     py = _py(gy)
                     if not full and (gx, gy) not in changed:
                         continue
+                    cell_tag = f"cell_{gx}_{gy}"
+                    raw.delete(f"cell_{gx}_{gy}")
+                    cv = _tagged(raw, cell_tag)
                     tile = self.level.tile_at(gx, gy)
                     tile_cls = tile.__class__.__name__
 
-                    # 1. background tile (decoy Goals read as floor relocated)
+
                     if tile_cls == "Wall":
-                        draw_wall(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
+                        draw_wall(cv, px, py, cell, fast=fast)
                     elif tile_cls == "Goal":
                         if flag_moved:
-                            draw_floor(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
+                            draw_floor(cv, px, py, cell, fast=fast)
                         else:
-                            draw_goal(raw, px, py, cell, fast=fast)
+                            self._draw_goal_cell(cv, gx, gy, px, py, cell, fast=fast)
                     else:
-                        draw_floor(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
+                        draw_floor(cv, px, py, cell, fast=fast)
                         if flag_moved and flag2 is not None and (gx, gy) == flag2:
-                            draw_goal(raw, px, py, cell, fast=fast)
+                            self._draw_goal_cell(cv, gx, gy, px, py, cell, fast=fast)
                         elif gate_on and gate2 is not None and (gx, gy) == gate2:
-                            draw_goal(raw, px, py, cell, fast=fast)
+                            self._draw_goal_cell(cv, gx, gy, px, py, cell, fast=fast)
                         elif beacon_on and beacon2 is not None and (gx, gy) == beacon2:
-                            draw_goal(raw, px, py, cell, fast=fast)
+                            self._draw_goal_cell(cv, gx, gy, px, py, cell, fast=fast)
 
-                    # 2. terrain layer
+
                     terr = self.level.terrain_at(gx, gy)
                     tcls = terr.__class__.__name__ if terr is not None else ""
                     if tcls == "Door":
                         if terr.is_blocking():
-                            draw_door_closed(raw, px, py, cell, fast=fast)
+                            draw_door_closed(cv, px, py, cell, fast=fast)
                         else:
-                            draw_door_open(raw, px, py, cell, fast=fast)
+                            draw_door_open(cv, px, py, cell, fast=fast)
                     elif tcls == "Trap":
                         if terr.is_lethal():
-                            draw_trap_lethal(raw, px, py, cell, fast=fast)
+                            draw_trap_lethal(cv, px, py, cell, fast=fast)
                         else:
-                            draw_trap_safe(raw, px, py, cell, fast=fast)
+                            draw_trap_safe(cv, px, py, cell, fast=fast)
                     elif tcls == "Platform":
                         if terr.is_void():
-                            draw_void(raw, px, py, cell, fast=fast)
+                            draw_void(cv, px, py, cell, fast=fast)
                         else:
-                            draw_floor(raw, px, py, cell, fast=fast)
+                            draw_floor(cv, px, py, cell, fast=fast)
                     elif tcls == "Stone":
                         if terr.is_blocking():
-                            draw_stone(raw, px, py, cell, fast=fast)
+                            draw_stone(cv, px, py, cell, fast=fast)
                         else:
-                            draw_floor(raw, px, py, cell, fast=fast)
+                            draw_floor(cv, px, py, cell, fast=fast)
                     elif tcls == "SealWall":
                         if terr.is_blocking():
-                            draw_seal_wall(raw, px, py, cell, fast=fast)
+                            draw_seal_wall(cv, px, py, cell, fast=fast,
+                                col=SEAL_SHEET_COL.get(tcls, 1))
                         else:
-                            draw_floor(raw, px, py, cell, fast=fast)
+                            draw_floor(cv, px, py, cell, fast=fast)
                     elif tcls in ("Seal2Wall", "Seal3Wall", "Seal4Wall", "Seal5Wall", "Seal6Wall"):
                         if terr.is_blocking():
-                            draw_seal_wall(raw, px, py, cell, fast=fast)
+                            draw_seal_wall(cv, px, py, cell, fast=fast,
+                                col=SEAL_SHEET_COL.get(tcls, 1))
                         else:
-                            draw_floor(raw, px, py, cell, fast=fast)
+                            draw_floor(cv, px, py, cell, fast=fast)
                     elif tcls == "LeverPedestal":
                         _active = bool(terr.is_active()) if hasattr(terr, "is_active") else False
-                        draw_lever(raw, px, py, cell, active=_active, fast=fast)
+                        draw_lever(cv, px, py, cell, active=_active, fast=fast)
                     elif tcls == "LeverWall":
-                        draw_wall(raw, px, py, cell, fast=fast)
+                        draw_wall(cv, px, py, cell, fast=fast)
                     elif tcls == "LatchDoor":
                         if terr.is_blocking():
-                            draw_latch_closed(raw, px, py, cell, fast=fast)
+                            draw_latch_closed(cv, px, py, cell, fast=fast)
                         else:
-                            draw_latch_open(raw, px, py, cell, fast=fast)
+                            draw_latch_open(cv, px, py, cell, fast=fast)
                     elif tcls == "LaserDoor":
                         if terr.is_blocking():
-                            draw_laser(raw, px, py, cell, active=True, fast=fast)
+                            draw_laser(cv, px, py, cell, active=True, fast=fast)
                         else:
-                            draw_laser(raw, px, py, cell, active=False, fast=fast)
+                            draw_laser(cv, px, py, cell, active=False, fast=fast)
                     elif tcls == "Warp":
-                        # Portals are visible by default (P toggles reveal/hide).
-                        if getattr(self, "_show_warps", True):
-                            draw_warp(raw, px, py, cell, fast=fast)
-                        # else: drawn as plain floor (background tile already drawn in step 1)
-                    elif tcls in ("HiddenBoom", "HardMine"):
-                        # Land mines stay visible in global levels (level 9):
-                        # pixel-bomb marker on the floor.
-                        draw_mine(raw, px, py, cell, fast=fast)
 
-                    # 3. block layer on top
+                        if getattr(self, "_show_warps", True):
+                            draw_warp(cv, px, py, cell, fast=fast)
+
+                    elif tcls in ("HiddenBoom", "HardMine"):
+
+
+                        draw_mine(cv, px, py, cell, fast=fast)
+
+
                     blk = self.level.block_at(gx, gy)
                     if blk is not None:
-                        draw_code_block(raw, px, py, cell,
-                                        blk.glyph().strip(), blk.kind, fast=fast,
-                                        active=(gx, gy) in active_slots)
+                        draw_code_block(cv, px, py, cell,
+                                        blk.glyph().strip(), blk.kind, fast=fast)
 
-                    # 4. player layer
+
                     is_player = (self.level.player and
                                  self.level.player.x == gx and
                                  self.level.player.y == gy)
-                    if is_player:
+                    if is_player and self._goal_entry_frame > 0 and not self.level.dead:
+                        pass
+                    elif is_player:
                         if self.level.dead:
                             under = self.level.terrain_at(gx, gy)
                             if self.level.player_invisible:
-                                # drowned in the void: character is gone
-                                draw_void(raw, px, py, cell, fast=fast)
+
+                                draw_void(cv, px, py, cell, fast=fast)
                             elif (under is not None
                                     and under.__class__.__name__ == "LaserDoor"
                                     and under.is_lethal()):
-                                # vaporised by live beams: ash pile
-                                draw_ash(raw, px, py, cell, fast=fast)
+
+                                draw_ash(cv, px, py, cell, fast=fast)
                             elif (under is not None
                                     and under.__class__.__name__ in (
                                         "HiddenBoom", "BorderMine", "HardMine")):
-                                # blown apart by a mine: ash pile
-                                draw_ash(raw, px, py, cell, fast=fast)
+
+                                self._draw_mine_aftermath(cv, px, py, cell, fast=fast)
                             elif (under is not None
                                     and under.__class__.__name__ == "Trap"
                                     and under.is_lethal()):
-                                # killed by a live trap: skeleton
-                                draw_skeleton(raw, px, py, cell, fast=fast)
+
+                                draw_player(cv, px, py, cell, fast=fast, dead=True, death_type="trap", state="idle")
                             elif under is not None and under.is_lethal():
-                                draw_boom_explosion(raw, px, py, cell, fast=fast)
+                                draw_boom_explosion(cv, px, py, cell, fast=fast)
                             else:
-                                draw_player(raw, px, py, cell, fast=fast)
+                                draw_player(cv, px, py, cell, fast=fast, dead=True, death_type=None, state="idle")
                         else:
-                            # alive actor lives in the fx overlay (breath + shadow)
-                            pass
+                            draw_player(cv, px, py, cell, fast=fast, dead=False, state=_state)
         else:
             for gy in range(y0i, y1i):
                 for gx in range(x0i, x1i):
@@ -1101,114 +1286,113 @@ class GUIEngine(GameView):
                     py = _py(gy)
                     if not full and (gx, gy) not in changed:
                         continue
+                    cell_tag = f"cell_{gx}_{gy}"
+                    raw.delete(f"cell_{gx}_{gy}")
+                    cv = _tagged(raw, cell_tag)
                     tile = self.level.tile_at(gx, gy)
                     tile_cls = tile.__class__.__name__
 
-                    # 1. background tile — walls always look the same, passable or not
-                    if tile_cls == "Wall":
-                        draw_wall(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
-                    elif tile_cls == "Goal":
-                        draw_goal(raw, px, py, cell, fast=fast)
-                    else:
-                        draw_floor(raw, px, py, cell, fast=fast, gx=gx, gy=gy)
 
-                    # 2. dynamic object on top
+                    if tile_cls == "Wall":
+                        draw_wall(cv, px, py, cell, fast=fast)
+                    elif tile_cls == "Goal":
+                        self._draw_goal_cell(cv, gx, gy, px, py, cell, fast=fast)
+                    else:
+                        draw_floor(cv, px, py, cell, fast=fast)
+
+
                     occ = self.level.object_at(gx, gy)
                     cls = occ.__class__.__name__ if occ is not None else ""
                     is_player = (self.level.player and
                                  self.level.player.x == gx and
                                  self.level.player.y == gy)
 
-                    if is_player and self.level.dead and cls in ("HiddenBoom", "BorderMine", "HardMine"):
-                        draw_ash(raw, px, py, cell, fast=fast)
+                    if is_player and not self.level.dead and self._goal_entry_frame > 0:
+                        pass
+                    elif is_player and self.level.dead and cls in ("HiddenBoom", "BorderMine", "HardMine"):
+                        self._draw_mine_aftermath(cv, px, py, cell, fast=fast)
                     elif (is_player and self.level.dead and cls == "LaserDoor"
                             and occ is not None and occ.is_lethal()):
-                        draw_ash(raw, px, py, cell, fast=fast)
+                        draw_ash(cv, px, py, cell, fast=fast)
                     elif (is_player and self.level.dead and cls == "Trap"
                             and occ is not None and occ.is_lethal()):
-                        draw_skeleton(raw, px, py, cell, fast=fast)
+                        draw_player(cv, px, py, cell, fast=fast, dead=True, death_type="trap", state="idle")
                     elif is_player and self.level.dead and self.level.player_invisible:
-                        # Fell into the void: the character is gone — only the
-                        # empty pit is drawn.
-                        draw_void(raw, px, py, cell, fast=fast)
+
+
+                        draw_void(cv, px, py, cell, fast=fast)
                     elif is_player:
-                        if self.level.dead or self.level.player_invisible:
-                            draw_player(raw, px, py, cell, fast=fast)
-                        # else: alive actor lives in the fx overlay.
+                        draw_player(cv, px, py, cell, fast=fast, dead=self.level.dead, death_type=None, state=_state if not self.level.dead else "idle")
                     elif occ is not None:
                         if cls == "Platform":
                             if occ.is_void():
-                                draw_void(raw, px, py, cell, fast=fast)
+                                draw_void(cv, px, py, cell, fast=fast)
                             else:
-                                # Path.solid = True — void trap removed, plain floor
-                                draw_floor(raw, px, py, cell, fast=fast)
+
+                                draw_floor(cv, px, py, cell, fast=fast)
                         elif cls == "Door":
                             if occ.is_blocking():
-                                draw_door_closed(raw, px, py, cell, fast=fast)
+                                draw_door_closed(cv, px, py, cell, fast=fast)
                             else:
-                                draw_door_open(raw, px, py, cell, fast=fast)
+                                draw_door_open(cv, px, py, cell, fast=fast)
                         elif cls == "Trap":
                             if occ.is_lethal():
-                                draw_trap_lethal(raw, px, py, cell, fast=fast)
+                                draw_trap_lethal(cv, px, py, cell, fast=fast)
                             else:
-                                draw_trap_safe(raw, px, py, cell, fast=fast)
+                                draw_trap_safe(cv, px, py, cell, fast=fast)
                         elif cls == "Stone":
                             if occ.is_blocking():
-                                draw_stone(raw, px, py, cell, fast=fast)
+                                draw_stone(cv, px, py, cell, fast=fast)
                             else:
-                                draw_floor(raw, px, py, cell, fast=fast)
+                                draw_floor(cv, px, py, cell, fast=fast)
                         elif cls == "SealWall":
                             if occ.is_blocking():
-                                draw_seal_wall(raw, px, py, cell, fast=fast)
+                                draw_seal_wall(cv, px, py, cell, fast=fast,
+                                    col=SEAL_SHEET_COL.get(cls, 1))
                             else:
-                                draw_floor(raw, px, py, cell, fast=fast)
+                                draw_floor(cv, px, py, cell, fast=fast)
                         elif cls in ("Seal2Wall", "Seal3Wall", "Seal4Wall", "Seal5Wall", "Seal6Wall"):
                             if occ.is_blocking():
-                                draw_seal_wall(raw, px, py, cell, fast=fast)
+                                draw_seal_wall(cv, px, py, cell, fast=fast,
+                                    col=SEAL_SHEET_COL.get(cls, 1))
                             else:
-                                draw_floor(raw, px, py, cell, fast=fast)
+                                draw_floor(cv, px, py, cell, fast=fast)
                         elif cls == "LeverPedestal":
                             _active = bool(occ.is_active()) if hasattr(occ, "is_active") else False
-                            draw_lever(raw, px, py, cell, active=_active, fast=fast)
+                            draw_lever(cv, px, py, cell, active=_active, fast=fast)
                         elif cls == "LeverWall":
-                            draw_wall(raw, px, py, cell, fast=fast)
+                            draw_wall(cv, px, py, cell, fast=fast)
                         elif cls == "LatchDoor":
                             if occ.is_blocking():
-                                draw_latch_closed(raw, px, py, cell, fast=fast)
+                                draw_latch_closed(cv, px, py, cell, fast=fast)
                             else:
-                                draw_latch_open(raw, px, py, cell, fast=fast)
+                                draw_latch_open(cv, px, py, cell, fast=fast)
                         elif cls == "LaserDoor":
-                            draw_laser(raw, px, py, cell, active=bool(occ.is_blocking()), fast=fast)
+                            draw_laser(cv, px, py, cell, active=bool(occ.is_blocking()), fast=fast)
                         elif cls == "Warp":
-                            # Portals are visible by default (P toggles reveal/hide).
+
                             if getattr(self, "_show_warps", True):
-                                draw_warp(raw, px, py, cell, fast=fast)
-                            # else: drawn as plain floor (background tile already drawn in step 1)
+                                draw_warp(cv, px, py, cell, fast=fast)
+
                         elif cls == "CodeBlock":
                             label = occ.glyph().strip()
                             kind = occ.kind
-                            draw_code_block(raw, px, py, cell, label, kind, fast=fast,
-                                            active=(gx, gy) in active_slots)
+                            draw_code_block(cv, px, py, cell, label, kind, fast=fast)
 
         if full and not board_only:
-            # Full repaints own every visible cell: snapshot signatures so
-            # the next same-geometry frame can repaint incrementally.
-            # (Camera ticks skip this — their geometry is mid-glide and the
-            # next tick is a full repaint anyway.)
+
+
+
+
             fresh: dict[tuple[int, int], tuple] = {}
             for _gy in range(y0i, y1i):
                 for _gx in range(x0i, x1i):
-                    fresh[(_gx, _gy)] = self._cell_sig(_gx, _gy)
+                    fresh[(_gx, _gy)] = self._cell_signature(_gx, _gy, reg)
             self._cell_sigs = fresh
 
-        # ── ambient fx overlay (actor, dust, sparks, shimmer) ──
-        # Painted on every frame (full or camera tick) and on the ambient
-        # clock; the base cells above are never touched by it.
-        self._draw_fx_overlay()
 
-        # ── info panel ──
-        # Camera ticks redraw only the canvas and return early: panel
-        # Text/label/backdrop work is what made keys feel late.
+
+
         if board_only:
             self._request_camera_anim()
             return
@@ -1240,11 +1424,16 @@ class GUIEngine(GameView):
                     self.race_title.configure(text="TIME! 00:00")
                 elif self._race_ends_at is not None:
                     self.race_title.configure(
-                        text="%s minute left" % fmt_time(self._race_ends_at - _time3.time()))
+                        text="Timer: %s Minute left" % fmt_time(self._race_ends_at - _time3.time()))
                 if not self.race_title.winfo_ismapped():
-                    self.race_title.pack(fill="x", padx=12, pady=5, anchor="nw")
+                    self.race_title.pack(fill="x", padx=12, pady=5, anchor="nw",
+                                         after=self.sep_status)
                 if not self.race_view._text.winfo_ismapped():
-                    self.race_view._text.pack(fill="x", padx=12, pady=4, anchor="nw")
+
+
+
+                    self.race_view._text.pack(fill="x", padx=12, pady=4, anchor="nw",
+                                              after=self.race_title)
                 self.race_view.set_text(race_text)
             else:
                 self.race_title.pack_forget()
@@ -1252,41 +1441,48 @@ class GUIEngine(GameView):
                     self.race_view._text.pack_forget()
                 except Exception:
                     pass
-            # Game feedback message — previously stored but never shown.
-            if self._last_message:
-                msg_fg = DANGER_COLOR if self.level.dead else TEXT_BODY
-                self.message_label.configure(text=f"▶ {self._last_message}", fg=msg_fg)
-                if not self.message_label.winfo_ismapped():
-                    self.message_label.pack(fill="x", padx=12, pady=5, anchor="nw")
-            else:
-                self.message_label.pack_forget()
+
+
+
+
             if press > 0:
-                self.message_label.configure(
-                    text=f"⚙ Stone. + open: {press}/3 presses to fuse",
-                    fg=ACCENT)
-                if not self.message_label.winfo_ismapped():
-                    self.message_label.pack(fill="x", padx=12, pady=5, anchor="nw")
-            # Static help text is written once in _build_info_panel and
-            # never touched here (a Tk Text rewrite per move costs latency).
-            # Hints panel shows only when the current level carries hint
-            # text (currently level 8); otherwise the section stays hidden.
-            # Rewrite only when the hint actually changes: Text
-            # delete+insert per move costs input latency.
+                msg_text, msg_fg = (
+                    f"⚙ Stone. + open: {press}/3 presses to fuse", ACCENT)
+            elif self._last_message:
+                msg_text = f"▶ {self._last_message}"
+                msg_fg = DANGER_COLOR if self.level.dead else TEXT_BODY
+            else:
+                msg_text, msg_fg = "", TEXT_BODY
+            self.message_label.configure(text=msg_text, fg=msg_fg)
+            self._pad_message_row()
+
+
+
+
+
             if not self.game_completed and hint:
+                if not self.sep_registry.winfo_ismapped():
+                    self.sep_registry.pack(fill="x", padx=12, pady=6,
+                                           before=self.sep_volume)
                 if not self.hints_label.winfo_ismapped():
-                    self.hints_label.pack(fill="x", padx=12, pady=5, anchor="nw")
+                    self.hints_label.pack(fill="x", padx=12, pady=5, anchor="nw",
+                                          before=self.sep_volume)
                 if not self.hints_view._text.winfo_ismapped():
-                    self.hints_view._text.pack(fill="x", padx=12, pady=4, anchor="nw")
+                    self.hints_view._text.pack(fill="x", padx=12, pady=4, anchor="nw",
+                                               before=self.sep_volume)
+
+
                 if self._last_hint != hint:
                     self.hints_view.set_text(hint)
                     self._last_hint = hint
             else:
                 self.hints_label.pack_forget()
                 self.hints_view._text.pack_forget()
+                self.sep_registry.pack_forget()
                 self._last_hint = None
 
         self._paint_panel_backdrop()
-        # Keep gliding toward the player/zoom target after this frame.
+
         self._request_camera_anim()
         try:
             import time as _time2
@@ -1294,15 +1490,25 @@ class GUIEngine(GameView):
         except Exception:
             pass
 
-    def _paint_panel_backdrop(self):
-        """Dress the whole side panel in the night art (darkened for text).
+    def _pad_message_row(self):
+        lab = self.message_label
+        try:
+            art = lab.cget("image")
+            if art:
+                lab.configure(image="")
+            inset = 2 * (int(lab.cget("pady")) + int(lab.cget("bd"))
+                         + int(lab.cget("highlightthickness")))
+            rows = (lab.winfo_reqheight() - inset) // self._msg_line_px
+            rows = max(1, rows)
+            if rows < self._MSG_ROWS:
+                lab.configure(text=str(lab.cget("text"))
+                              + "\n" * (self._MSG_ROWS - rows))
+            if art:
+                lab.configure(image=art, compound="center")
+        except Exception:
+            pass
 
-        Frame gaps show the full-panel slice; each header/status label
-        gets its own aligned slice behind its text.  Repaints only when
-        the window/panel size changes — never from widget geometry, so
-        moves never visibly shift the panel.  Skipped (leaving the flat
-        colours) when geometry is unset or the art is unavailable.
-        """
+    def _paint_panel_backdrop(self):
         try:
             frame = self.info_frame._frame
             root = self.window.root
@@ -1324,14 +1530,6 @@ class GUIEngine(GameView):
             self._panel_bg_key = key
             bg = get_panel_photo(win_w, win_h, panel_w)
             if bg is None:
-                # Art unavailable (no Pillow / missing asset): keep the key
-                # cached so we don't redo layout every frame, and make
-                # sure the backdrop label stays hidden so the flat dark
-                # panel colours show instead of a default-white label.
-                try:
-                    self.info_frame.set_background(None)
-                except Exception:
-                    pass
                 return
             self.info_frame.set_background(bg)
             for name, lab in (("status", self.status_label),
@@ -1341,23 +1539,51 @@ class GUIEngine(GameView):
                               ("hints", self.hints_label)):
                 if not lab.winfo_ismapped():
                     continue
-                lx, ly, lw, lh = (lab.winfo_x(), lab.winfo_y(),
-                                  lab.winfo_width(), lab.winfo_height())
-                photo = get_panel_slice(lx, ly, lw, lh, win_w, win_h, panel_w)
-                if photo is None:
-                    continue
-                self._label_photos[name] = photo
-                lab.configure(image=photo, compound="center")
+
+
+
+
+
+
+
+
+
+                prev = self._label_photos.get(name)
+                try:
+                    if lab.cget("image"):
+                        lab.configure(image="")
+                    inset_x = (int(lab.cget("padx")) + int(lab.cget("bd"))
+                               + int(lab.cget("highlightthickness")))
+                    inset_y = (int(lab.cget("pady")) + int(lab.cget("bd"))
+                               + int(lab.cget("highlightthickness")))
+                    lx = lab.winfo_x() + inset_x
+                    ly = lab.winfo_y() + inset_y
+                    lw = lab.winfo_width() - 2 * inset_x
+                    lh = lab.winfo_reqheight() - 2 * inset_y
+                    photo = get_panel_slice(lx, ly, lw, lh, win_w, win_h,
+                                            panel_w)
+                    if photo is None:
+                        continue
+                    self._label_photos[name] = photo
+                    lab.configure(image=photo, compound="center")
+                except Exception:
+                    try:
+                        if prev is not None:
+                            lab.configure(image=prev, compound="center")
+                    except Exception:
+                        pass
         except Exception:
             return
 
-    # ── input ───────────────────────────────────────────────────────
+
     def on_key(self, key: str):
-        # map arrow keys to wasd
+
         arrow_map = {"up": "w", "down": "s", "left": "a", "right": "d"}
         key = arrow_map.get(key, key)
 
         if key == "q":
+            self._cancel_camera_anim()
+            self._cancel_race_tick()
             if self.race is not None:
                 try:
                     if self._race_is_host():
@@ -1366,10 +1592,11 @@ class GUIEngine(GameView):
                         self.race["net"].leave()
                 except Exception:
                     pass
-            self.close()
+            self.window.root.destroy()
             return
         if key == "h":
-            self.render_frame("Arrows/WASD move. R=restart. +/-=zoom. 0/F=fit map. C=center. Q=quit.")
+            self.render_frame("Arrows/WASD move. R=restart. +/-=zoom. 0/F=fit map. "
+                              "C=center. M=mute. [/]=volume. Q=quit.")
             return
         if key == "r":
             from_start = self.game_completed
@@ -1387,12 +1614,21 @@ class GUIEngine(GameView):
             self._show_warps = not getattr(self, "_show_warps", False)
             self.render_frame("Portals " + ("revealed." if self._show_warps else "hidden."))
             return
-        if key in ("plus", "equal", "kp_add"):
+        if key == "m":
+            self._on_mute_toggle()
+            return
+        if key in ("bracketleft", "["):
+            self._bump_volume(-10)
+            return
+        if key in ("bracketright", "]"):
+            self._bump_volume(+10)
+            return
+        if key in ("plus", "equal", "kp_add", "+", "="):
             self._zoom = min(CAM_ZOOM_MAX, self._zoom + 0.15)
             self._nudge_camera_toward_target(0.6)
             self.render_frame(f"Zoom {self._zoom:.2f}x -- rooms closer.")
             return
-        if key in ("minus", "kp_subtract"):
+        if key in ("minus", "kp_subtract", "-"):
             self._zoom = max(CAM_ZOOM_MIN, self._zoom - 0.15)
             self._nudge_camera_toward_target(0.6)
             self.render_frame(f"Zoom {self._zoom:.2f}x -- see more rooms.")
@@ -1402,14 +1638,14 @@ class GUIEngine(GameView):
             self.render_frame(f"Zoom {zoom:.2f}x -- full map in view.")
             return
         if key == "c":
-            # Let the easing loop glide back to the player (smooth);
-            # restart/next-level still snap instantly.
+
+
             self.render_frame("Camera gliding to player.")
             return
         if key not in ("w", "a", "s", "d"):
             return
 
-        # block movement after game completion
+
         if self.game_completed:
             if self.race is not None:
                 self.render_frame("Roster complete! Waiting for the clock.")
@@ -1423,18 +1659,59 @@ class GUIEngine(GameView):
             return
 
         m0 = self.level.moves
-        _pp = getattr(self.level, "player", None)
-        _px0 = _pp.x if _pp is not None else None
-        _py0 = _pp.y if _pp is not None else None
+        _door_was_open = bool(PropertyRegistry.get("Door", "isOpen", False))
+        _latch_was_open = bool(PropertyRegistry.get("Latch", "isOpen", False))
+        _stone_was_solid = bool(PropertyRegistry.get("Stone", "solid", True))
+        _was_dead = bool(self.level.dead)
+        _pre_pos = (self.level.player.x, self.level.player.y) if self.level.player else None
+        try:
+            _pre_blocks = set(self.level.blocks_by_pos().keys())
+        except Exception:
+            _pre_blocks = set()
         msg = self.level.move_player(key)
-        if self.level.moves > m0 and _px0 is not None:
-            # footstep dust where the actor pushed off from
-            import time as _time
+
+        try:
+            if bool(PropertyRegistry.get("Door", "isOpen", False)) and not _door_was_open:
+                self._play_sfx(SFX_DOOR)
+            elif bool(PropertyRegistry.get("Latch", "isOpen", False)) and not _latch_was_open:
+                self._play_sfx(SFX_DOOR)
+            if not bool(PropertyRegistry.get("Stone", "solid", True)) and _stone_was_solid:
+                self._play_sfx(SFX_STONE)
+        except Exception:
+            pass
+        if self.level.dead and not _was_dead and "BOOM!" in msg:
+
+            self._play_sfx(SFX_EXPLOSION)
+            self._boom_anim = {"phase": "blast"}
             try:
-                self._dust.append((_px0, _py0, _time.time()))
-                del self._dust[:-FX_DUST_CAP]
+                _bm, _bl = self.level.moves, self.level_index
+
+                def _settle_boom(moves=_bm, lvl=_bl):
+                    try:
+                        if (self.level.dead and self.level.moves == moves
+                                and self.level_index == lvl):
+                            self._boom_anim = {"phase": "ash"}
+                            self.render_frame(self._last_message)
+                    except Exception:
+                        pass
+
+                self.window.root.after(BOOM_BLAST_MS, _settle_boom)
             except Exception:
-                pass
+                self._boom_anim = {"phase": "ash"}
+        try:
+            _post_pos = (self.level.player.x, self.level.player.y) if self.level.player else None
+            _moved = _pre_pos is not None and _post_pos is not None and _post_pos != _pre_pos
+            try:
+                _blocks_moved = set(self.level.blocks_by_pos().keys()) != _pre_blocks
+            except Exception:
+                _blocks_moved = False
+            if _moved:
+                self._last_player_pos = _pre_pos
+                self._last_anim_frame = self.level.moves
+            if _moved and (_blocks_moved or "push" in msg.lower()):
+                self._last_push_frame = self.level.moves
+        except Exception:
+            pass
         if self.race is not None and self.level.moves > m0:
             self._race_moves += self.level.moves - m0
             self._race_report()
@@ -1442,38 +1719,28 @@ class GUIEngine(GameView):
             if self.race is not None:
                 self._race_levels += 1
                 self._race_report()
-            if not self.next_level():
-                self.render_frame(
-                    "🎉 Congratulations!  You compiled your way through every level!  "
-                    "Press R to play again or Q to quit.")
+                if not self.next_level():
+                    self.render_frame(
+                        "🎉 Congratulations!  You compiled your way through every level!  "
+                        "Press R to play again or Q to quit.")
+                    return
+                self.render_frame("Level solved!  New level loaded.")
                 return
-            self.render_frame("Level solved!  New level loaded.")
+            if self._player_on_goal_art():
+                self._start_goal_entry_animation()
+                return
+            self._finish_win()
             return
         if self.level.dead:
             self._nudge_camera_toward_target(1.0)
             self.render_frame(msg + "  Press R to restart.")
             return
-        # Snap the camera exactly onto the player: at 120Hz there is no
-        # glide after a move, so one keypress costs exactly one redraw and
-        # no background tick storm competes with the next keypress.
+
+
+
         self._nudge_camera_toward_target(1.0)
         self.render_frame(msg)
 
-    # ── GameView seam ─────────────────────────────────────────────
-    def render(self, message: str = "") -> None:
-        """Paint the current level state (GameView contract)."""
-        self.render_frame(message)
 
-    def close(self) -> None:
-        """Cancel clocks and destroy the window (GameView contract)."""
-        self._cancel_camera_anim()
-        self._cancel_race_tick()
-        self._cancel_fx_tick()
-        try:
-            self.window.root.destroy()
-        except Exception:
-            pass
-
-    # ── entry point ─────────────────────────────────────────────────
     def run(self):
         self.window.run()

@@ -1,12 +1,11 @@
-"""tests/test_lobby.py -- lobby host/join/start roundtrip on localhost."""
 import os
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from multiplayer.lobby import LobbyHost, LobbyClient  # noqa: E402
-from multiplayer.protocol import GAMEMODES  # noqa: E402
+from multiplayer.lobby import LobbyHost, LobbyClient
+from multiplayer.protocol import GAMEMODES
 
 
 def test_host_join_start_leave():
@@ -21,7 +20,7 @@ def test_host_join_start_leave():
         host.start_game()
         time.sleep(0.5)
         assert guest.started, "guest must see host start"
-        assert "coming soon" in guest.start_note, guest.start_note
+        assert "co-op-puzzle" in guest.start_note, guest.start_note
         guest.leave()
         time.sleep(0.5)
         assert "Guest" not in host.players, host.players

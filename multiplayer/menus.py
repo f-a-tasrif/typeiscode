@@ -1,19 +1,3 @@
-"""menus.py — Tkinter home / multiplayer / lobby screens (GUI only).
-
-Flow:
-  Home [Play | Multiplayer | Exit Game]
-    Play         -> callback into single-player GUIEngine
-    Multiplayer  -> [I'm faster than you | Two player | Back]
-      I'm faster than you -> LAN lobby menu (race mode fixed)
-      Two player          -> [Duel | Win together | Back]
-        Duel              -> LAN lobby menu (versus mode fixed)
-        Win together      -> LAN lobby menu (co-op mode fixed)
-      LAN lobby menu -> [Create Lobby | Join Lobby | Back]
-        Create   -> enter name -> host lobby screen (mode fixed)
-        Join     -> enter name, Refresh LAN list or type host IP, Join
-        Lobby    -> host sees players + Start (placeholder until gamemode
-                   level logic lands); client waits for host start.
-"""
 from __future__ import annotations
 
 from .protocol import (
@@ -22,20 +6,31 @@ from .protocol import (
     gamemode_label,
 )
 
-# Multiplayer hub mapping: hub button -> fixed lobby gamemode id.
-FASTER_MODE = "race"          # "I'm faster than you" — race over LAN
-DUEL_MODE = "versus"          # "Two player > Duel" — versus over LAN
-TOGETHER_MODE = "co-op-puzzle"  # "Two player > Win together" — co-op over LAN
 
-BG = "#0f1323"
-PANEL = "#111528"
-TEXT = "#eef1ff"
-DIM = "#a8b0d0"
-ACCENT = "#8aa2ff"
+FASTER_MODE = "race"
+DUEL_MODE = "versus"
+TOGETHER_MODE = "co-op-puzzle"
+
+
+BG = "#0d0a1a"
+PANEL = "#2a1f3d"
+TEXT = "#e8d5a3"
+DIM = "#9a8860"
+ACCENT = "#d4aa44"
+BTN_BG = "#2a1f3d"
+BTN_FG = "#e8d5a3"
+BTN_ACTIVE = "#5a3f7a"
+BTN_BORDER = "#7a5fa8"
+ENTRY_BG = "#1a1030"
+TITLE_GOLD = "#d4aa44"
+SHADOW = "#0a0a0a"
+DUNGEON_DIM = 0.40
+BTN_WIDTH = 26
+BTN_HEIGHT = 2
 
 
 class MenuApp:
-    def __init__(self, on_play, on_race=None, start="home"):
+    def __init__(self, on_play, on_race=None):
         import tkinter as tk
         from tkinter import messagebox
         self.tk = tk
@@ -53,12 +48,14 @@ class MenuApp:
         self.is_host = False
         self.poll_job = None
         self.discovered = []
-        self.show_home()
-        if start == "multiplayer":
-            # Entered from the animated menu's MULTIPLAYER option.
-            self.show_multiplayer()
 
-    # -- frame helpers ------------------------------------------------
+        self._bg_label = None
+        self._bg_photo = None
+        self._bg_size = None
+        self.root.bind("<Configure>", self._apply_backdrop, add="+")
+        self.show_home()
+
+
     def _leave_net(self):
         self._stop_poll()
         if self.client is not None:
@@ -83,36 +80,135 @@ class MenuApp:
     def _new_frame(self):
         import tkinter as tk
         self._clear()
-        self.frame = tk.Frame(self.root, bg=BG)
-        self.frame.pack(fill="both", expand=True, padx=28, pady=24)
-        return self.frame
+        outer = tk.Frame(self.root, bg=BG)
+        outer.pack(fill="both", expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(0, weight=1)
+        outer.rowconfigure(2, weight=1)
 
-    def _title(self, parent, text, sub=""):
-        t = self.tk.Label(parent, text=text, font=("Consolas", 22, "bold"),
-                          fg=TEXT, bg=BG)
-        t.pack(pady=(6, 2))
+        self._bg_label = tk.Label(outer, bg=BG, borderwidth=0,
+                                  highlightthickness=0)
+        self._bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+        self._bg_size = None
+        self._apply_backdrop()
+        content = tk.Frame(outer, bg=BG)
+
+        content.grid(row=1, column=0, sticky="n")
+        content.columnconfigure(0, weight=1)
+        self.frame = outer
+        return content
+
+
+    def _tile_backdrop(self, w: int, h: int):
+        w, h = int(w), int(h)
+        if w < 50 or h < 50:
+            return None
+        try:
+            from PIL import Image, ImageTk
+            from tile_renderer import DungeonSheet
+            frame = DungeonSheet.frame_image("walls_floor.png", 0, 0)
+            if frame is None:
+                return None
+            tile = frame.convert("RGB")
+            base = Image.new("RGB", (w, h))
+            for _y in range(0, h, tile.height):
+                for _x in range(0, w, tile.width):
+                    base.paste(tile, (_x, _y))
+            base = base.point(lambda v: int(v * DUNGEON_DIM))
+            return ImageTk.PhotoImage(base)
+        except Exception:
+            return None
+
+    def _apply_backdrop(self, *_event):
+        label = getattr(self, "_bg_label", None)
+        if label is None:
+            return
+        w, h = self.root.winfo_width(), self.root.winfo_height()
+        if w < 50 or h < 50:
+            return
+        if (w, h) == self._bg_size:
+            return
+        photo = self._tile_backdrop(w, h)
+        if photo is None:
+            return
+        self._bg_size = (w, h)
+        self._bg_photo = photo
+        try:
+            label.configure(image=photo)
+        except Exception:
+            pass
+
+
+    def _title(self, parent, text, sub="", big=False):
+        tk = self.tk
+        if big:
+            holder = tk.Frame(parent, bg=BG)
+            font = ("Consolas", 44, "bold")
+
+
+
+            for offset in (2, 1):
+                shadow = tk.Label(holder, text=text, font=font,
+                                  fg=SHADOW, bg=BG)
+                shadow.grid(row=0, column=0, sticky="nw",
+                            padx=(offset, 0), pady=(offset, 0))
+            t = tk.Label(holder, text=text, font=font, fg=TITLE_GOLD, bg=BG)
+            t.grid(row=0, column=0, sticky="nw")
+            holder.pack(pady=(0, 20 if not sub else 4))
+        else:
+            t = tk.Label(parent, text=text, font=("Consolas", 22, "bold"),
+                         fg=TITLE_GOLD, bg=BG)
+            t.pack(pady=(6, 20 if not sub else 2))
         if sub:
-            s = self.tk.Label(parent, text=sub, font=("Consolas", 11),
-                              fg=DIM, bg=BG, wraplength=460, justify="center")
-            s.pack(pady=(0, 12))
+            s = tk.Label(parent, text=sub, font=("Consolas", 11),
+                         fg=DIM, bg=BG, wraplength=460, justify="center")
+            s.pack(pady=(0, 20))
         return t
 
     def _btn(self, parent, text, cmd):
-        return self.tk.Button(parent, text=text, command=cmd,
-                              font=("Consolas", 13, "bold"),
-                              fg=TEXT, bg=PANEL, activebackground=ACCENT,
-                              relief="flat", padx=12, pady=10)
+        tk = self.tk
+        border = tk.Frame(parent, bg=BTN_BORDER, padx=2, pady=2)
+        button = tk.Button(
+            border, text=text, command=cmd,
+            font=("Consolas", 14, "bold"),
+            fg=BTN_FG, bg=BTN_BG, activebackground=BTN_ACTIVE,
+            activeforeground=BTN_FG, relief="flat", bd=0,
+            width=BTN_WIDTH, height=BTN_HEIGHT,
+            padx=16, pady=10, cursor="hand2")
+        button.pack(fill="x")
+        return border
 
-    # -- screens ------------------------------------------------------
+    def _entry(self, parent, var, width=28):
+        return self.tk.Entry(
+            parent, textvariable=var, width=width,
+            font=("Consolas", 13), bg=ENTRY_BG, fg=TEXT,
+            insertbackground=TEXT, relief="flat", bd=0,
+            highlightbackground=BTN_BORDER, highlightthickness=1)
+
+    def _field(self, parent, row, label, widget, sticky="w"):
+        lab = self.tk.Label(parent, text=label, font=("Consolas", 13),
+                            fg=TEXT, bg=BG)
+        lab.grid(row=row, column=0, sticky="e", padx=(0, 10), pady=4)
+        widget.grid(row=row, column=1, sticky=sticky, pady=4)
+        return lab
+
+    def _form(self, parent):
+        form = self.tk.Frame(parent, bg=BG)
+        form.pack(fill="x", pady=(0, 6))
+        form.columnconfigure(1, weight=1)
+        return form
+
+
     def show_home(self):
         self._leave_net()
         f = self._new_frame()
-        self._title(f, "TYPE IS CODE", "Rewrite the source code of the world.")
-        self._btn(f, "▶  Play", self._on_play_pressed).pack(fill="x", pady=6)
+        self._title(f, "TYPE IS CODE",
+                    "Rewrite the source code of the world.", big=True)
+        self._btn(f, "▶  Single Player", self._on_play_pressed).pack(fill="x", pady=6)
         self._btn(f, "🌐  Multiplayer", self.show_multiplayer).pack(fill="x", pady=6)
         self._btn(f, "✕  Exit Game", self.root.destroy).pack(fill="x", pady=6)
         hint = self.tk.Label(
-            f, text="Single-player puzzle on Play. LAN lobbies under Multiplayer.",
+            f, text="",
             font=("Consolas", 10), fg=DIM, bg=BG, wraplength=460)
         hint.pack(pady=(14, 0))
 
@@ -134,10 +230,58 @@ class MenuApp:
         f = self._new_frame()
         self._title(f, "TWO PLAYER", "Pick a two-player mode.")
         self._btn(f, "⚔  Duel",
-                  lambda: self.show_lan_menu(DUEL_MODE)).pack(fill="x", pady=6)
+                  lambda: self._coming_soon("DUEL")).pack(fill="x", pady=6)
         self._btn(f, "🤝  Win together",
-                  lambda: self.show_lan_menu(TOGETHER_MODE)).pack(fill="x", pady=6)
+                  lambda: self._coming_soon("WIN TOGETHER")).pack(fill="x", pady=6)
         self._btn(f, "←  Back", self.show_multiplayer).pack(fill="x", pady=6)
+
+    def _coming_soon(self, mode_title: str):
+        tk = self.tk
+        pop = tk.Toplevel(self.root)
+        pop.title(f"{mode_title} — Coming Soon")
+        pop.configure(bg=BG)
+        pop.geometry("380x220")
+        pop.minsize(320, 180)
+        pop.resizable(False, False)
+        try:
+            pop.transient(self.root)
+            pop.grab_set()
+        except Exception:
+            pass
+
+        try:
+            self.root.update_idletasks()
+            rx, ry = self.root.winfo_x(), self.root.winfo_y()
+            rw, rh = self.root.winfo_width(), self.root.winfo_height()
+            pop.update_idletasks()
+            pw, ph = pop.winfo_width(), pop.winfo_height()
+            pop.geometry("+%d+%d" % (rx + max(0, (rw - pw) // 2),
+                                     ry + max(0, (rh - ph) // 2)))
+        except Exception:
+            pass
+        border = tk.Frame(pop, bg=BTN_BORDER, padx=2, pady=2)
+        border.pack(fill="both", expand=True, padx=14, pady=14)
+        body = tk.Frame(border, bg=BG)
+        body.pack(fill="both", expand=True)
+        tk.Label(body, text=mode_title, font=("Consolas", 18, "bold"),
+                 fg=TITLE_GOLD, bg=BG).pack(pady=(16, 4))
+        tk.Label(body, text="Coming Soon...",
+                 font=("Consolas", 14, "bold"),
+                 fg=TEXT, bg=BG).pack(pady=(0, 12))
+        tk.Label(body, text="This mode is not playable yet.",
+                 font=("Consolas", 10),
+                 fg=DIM, bg=BG).pack(pady=(0, 12))
+        ok_border = tk.Frame(body, bg=BTN_BORDER, padx=2, pady=2)
+        ok_border.pack(pady=(0, 14))
+        tk.Button(ok_border, text="OK", command=pop.destroy,
+                  font=("Consolas", 12, "bold"),
+                  fg=BTN_FG, bg=BTN_BG, activebackground=BTN_ACTIVE,
+                  activeforeground=BTN_FG, relief="flat", bd=0,
+                  width=12, cursor="hand2").pack()
+        try:
+            pop.wait_window()
+        except Exception:
+            pass
 
     def _lan_title(self, gamemode: str) -> str:
         if gamemode == FASTER_MODE:
@@ -149,8 +293,8 @@ class MenuApp:
         return gamemode.upper()
 
     def _lan_back(self, gamemode: str):
-        # "I'm faster than you" lives directly under Multiplayer;
-        # Duel / Win together live under Two player.
+
+
         if gamemode == FASTER_MODE:
             self.show_multiplayer()
         else:
@@ -173,19 +317,16 @@ class MenuApp:
         title_sub = (f"{self._lan_title(fixed)} — create the LAN lobby."
                      if fixed else "Pick a gamemode, then create the lobby.")
         self._title(f, "CREATE LOBBY", title_sub)
-        self.tk.Label(f, text="Your name:", font=("Consolas", 11),
-                      fg=TEXT, bg=BG).pack(anchor="w")
+        form = self._form(f)
         name_var = self.tk.StringVar(value="Host")
-        self.tk.Entry(f, textvariable=name_var,
-                      font=("Consolas", 12)).pack(fill="x", pady=(0, 10))
+        self._field(form, 0, "Your name:", self._entry(form, name_var))
         if fixed is not None:
             mode_var = self.tk.StringVar(value=fixed)
-            self.tk.Label(f, text=f"Mode: {gamemode_label(fixed)}",
-                          font=("Consolas", 11, "bold"),
-                          fg=TEXT, bg=BG).pack(anchor="w", pady=(0, 4))
+            self._field(form, 1, "Mode:",
+                        self.tk.Label(form, text=gamemode_label(fixed),
+                                      font=("Consolas", 13, "bold"),
+                                      fg=ACCENT, bg=BG, anchor="w"))
         else:
-            self.tk.Label(f, text="Gamemode:", font=("Consolas", 11),
-                          fg=TEXT, bg=BG).pack(anchor="w")
             mode_var = self.tk.StringVar(value=GAMEMODES[0]["id"])
             labels = [g["label"] for g in GAMEMODES]
             ids = [g["id"] for g in GAMEMODES]
@@ -196,11 +337,15 @@ class MenuApp:
                     mode_var.set(ids[labels.index(choice)])
                 except ValueError:
                     pass
-            self.tk.OptionMenu(f, label_var, *labels,
-                               command=_on_mode_pick).pack(fill="x", pady=(0, 4))
+            menu = self.tk.OptionMenu(
+                form, label_var, *labels, command=_on_mode_pick)
+            menu.configure(font=("Consolas", 13), bg=ENTRY_BG, fg=TEXT,
+                           activebackground=BTN_ACTIVE, activeforeground=TEXT,
+                           highlightthickness=1, highlightbackground=BTN_BORDER,
+                           relief="flat", bd=0, width=26, anchor="w")
+            self._field(form, 1, "Gamemode:", menu)
         note = self.tk.Label(
-            f, text="Gamemode level plan + logic will be added later —\n"
-                    "the lobby stores your pick for now.",
+            f, text="",
             font=("Consolas", 10), fg=DIM, bg=BG, justify="left")
         note.pack(anchor="w", pady=(0, 12))
         self._btn(
@@ -219,15 +364,20 @@ class MenuApp:
         self._title(f, "JOIN LOBBY", title_sub + "\nNo lobby listed? Type the HOST IP shown on the "
                     "host's lobby screen. Both PCs need the same Wi-Fi, and the "
                     "host must allow Python through its firewall.")
-        self.tk.Label(f, text="Your name:", font=("Consolas", 11),
-                      fg=TEXT, bg=BG).pack(anchor="w")
+        form = self._form(f)
         name_var = self.tk.StringVar(value="Player")
-        self.tk.Entry(f, textvariable=name_var,
-                      font=("Consolas", 12)).pack(fill="x", pady=(0, 8))
-        self.tk.Label(f, text="LAN lobbies:", font=("Consolas", 11),
-                      fg=TEXT, bg=BG).pack(anchor="w")
-        listbox = self.tk.Listbox(f, font=("Consolas", 11), height=5)
-        listbox.pack(fill="both", expand=True, pady=(0, 8))
+        self._field(form, 0, "Your name:", self._entry(form, name_var))
+        listbox = self.tk.Listbox(
+            form, font=("Consolas", 11), height=5,
+            bg=ENTRY_BG, fg=TEXT, selectbackground=BTN_ACTIVE,
+            selectforeground=TEXT, relief="flat", bd=0,
+            highlightbackground=BTN_BORDER, highlightthickness=1)
+        self._field(form, 1, "LAN lobbies:", listbox, sticky="nsew")
+        form.rowconfigure(1, weight=1)
+        ip_var = self.tk.StringVar(value="127.0.0.1")
+        self._field(form, 2, "Host IP:", self._entry(form, ip_var, width=16))
+        port_var = self.tk.StringVar(value=str(DEFAULT_LOBBY_PORT))
+        self._field(form, 3, "Port:", self._entry(form, port_var, width=7))
 
         def refresh():
             listbox.delete(0, "end")
@@ -247,26 +397,13 @@ class MenuApp:
                     f"{info.host_name}  [{info.gamemode}]  "
                     f"{info.players}p  {info.address}:{info.port}")
             if self.discovered:
-                # Pre-select the first lobby: Join then uses it even if the
-                # user never clicks the row (the previous silent fallback to
-                # the manual 127.0.0.1 field caused bogus refused errors).
+
+
+
                 listbox.selection_set(0)
                 listbox.see(0)
         refresh_btn = self._btn(f, "↻  Refresh", refresh)
         refresh_btn.pack(fill="x", pady=(0, 8))
-
-        row = self.tk.Frame(f, bg=BG)
-        row.pack(fill="x", pady=(0, 8))
-        self.tk.Label(row, text="Host IP:", font=("Consolas", 11),
-                      fg=TEXT, bg=BG).pack(side="left")
-        ip_var = self.tk.StringVar(value="127.0.0.1")
-        self.tk.Entry(row, textvariable=ip_var, font=("Consolas", 12),
-                      width=16).pack(side="left", padx=6)
-        self.tk.Label(row, text="Port:", font=("Consolas", 11),
-                      fg=TEXT, bg=BG).pack(side="left")
-        port_var = self.tk.StringVar(value=str(DEFAULT_LOBBY_PORT))
-        self.tk.Entry(row, textvariable=port_var, font=("Consolas", 12),
-                      width=7).pack(side="left", padx=6)
 
         def _do_join():
             sel = listbox.curselection()
@@ -274,7 +411,7 @@ class MenuApp:
                 info = self.discovered[sel[0]]
                 addr, port = info.address, str(info.port)
             elif len(self.discovered) == 1:
-                # One lobby on the LAN and nothing selected: use it.
+
                 info = self.discovered[0]
                 addr, port = info.address, str(info.port)
             elif self.discovered:
@@ -303,7 +440,7 @@ class MenuApp:
         back_target = (lambda m=fixed: self.show_lan_menu(m)) if fixed else self.show_multiplayer
         self._btn(f, "←  Back", back_target).pack(fill="x", pady=6)
 
-    # -- actions ------------------------------------------------------
+
     def _do_create(self, name, gamemode):
         from .lobby import LobbyHost
         name = (name or "").strip()
@@ -356,10 +493,14 @@ class MenuApp:
             info_addr = f"Lobby {client.lobby_id}  |  host {client.host_name}"
         role = "HOST" if is_host else "GUEST"
         self._title(f, f"LOBBY ({role})", f"{info_name}  •  {info_mode}\n{info_addr}")
-        plist = self.tk.Listbox(f, font=("Consolas", 12), height=6)
+        plist = self.tk.Listbox(f, font=("Consolas", 12), height=6,
+                                bg=ENTRY_BG, fg=TEXT, selectbackground=BTN_ACTIVE,
+                                selectforeground=TEXT, relief="flat", bd=0,
+                                highlightbackground=BTN_BORDER,
+                                highlightthickness=1)
         plist.pack(fill="both", expand=True, pady=(0, 8))
-        status = self.tk.Label(f, text="Waiting…", font=("Consolas", 11),
-                               fg=DIM, bg=BG, wraplength=460, justify="left")
+        status = self.tk.Label(f, text="Waiting…", font=("Consolas", 13),
+                               fg=TEXT, bg=BG, wraplength=460, justify="left")
         status.pack(anchor="w", pady=(0, 8))
 
         def refresh_players(players):
@@ -413,7 +554,7 @@ class MenuApp:
                 self.show_multiplayer()
         self._btn(f, "✕  Leave Lobby", leave).pack(fill="x", pady=6)
 
-        # poll host/client events into the UI
+
         def poll():
             try:
                 if is_host and host is not None:
@@ -439,8 +580,7 @@ class MenuApp:
                                 text=f"Host started the game!\n{note}")
                             self.messagebox.showinfo(
                                 "Game started",
-                                note or "Host started the game. "
-                                       "Gamemode logic coming soon — lobby stays open.")
+                                note or "Host started the game.")
                         elif kind == "race_start":
                             self._begin_race("client")
                             return
@@ -463,7 +603,6 @@ class MenuApp:
         self._begin_race("host")
 
     def _begin_race(self, role):
-        """Leave the menu (keeping the lobby connection) and start racing."""
         if self.on_race is None:
             self.messagebox.showerror("Race", "Race launcher is not wired up.")
             return
@@ -492,8 +631,7 @@ class MenuApp:
             return
         note = msg.get("note", "")
         status_label.configure(text=f"Started!\n{note}\nLobby stays open.")
-        self.messagebox.showinfo("Game started", note + "\n\nLobby stays open — "
-                                 "gamemode level plan + logic lands later.")
+        self.messagebox.showinfo("Game started", note + "\n\nLobby stays open.")
 
     def _stop_poll(self):
         job, self.poll_job = self.poll_job, None
@@ -507,21 +645,6 @@ class MenuApp:
         self.root.mainloop()
 
 
-def run_menus(on_play, on_race=None, animated=True):
-    """Open the home menu window (blocking).
-
-    `on_play` starts the solo game; `on_race(role, net, name, duration_s)`
-    starts a LAN race (role "host"/"client").  The animated cover-art
-    menu is the default; pass animated=False for the classic menu.
-    """
-    if animated:
-        from menu_scene import run_animated_menu
-
-        def _to_multiplayer():
-            MenuApp(on_play, on_race=on_race, start="multiplayer").run()
-
-        run_animated_menu(on_new_game=on_play,
-                          on_multiplayer=_to_multiplayer)
-        return
+def run_menus(on_play, on_race=None):
     app = MenuApp(on_play, on_race=on_race)
     app.run()

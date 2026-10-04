@@ -1,13 +1,3 @@
-"""
-level.py
---------
-Level owns the grid of static tiles (Wall/Floor/Goal), the dynamic
-objects (Player, Platform, Door, Trap, CodeBlock) and the CircuitLines.
-It exposes a Sokoban-style move() method: the player steps in a
-direction; if a movable CodeBlock is in the way it gets pushed (if the
-cell beyond it is free); if a Platform/Door/Trap is in the way its
-*live* is_blocking()/is_lethal() decides what happens.
-"""
 
 from __future__ import annotations
 from game_object import GameObject, Wall, Floor, Goal, Player, Platform, Door, Trap, HiddenBoom, BorderMine, Warp, SealWall, Seal2Wall, Seal3Wall, Seal4Wall, Seal5Wall, Seal6Wall, LeverPedestal, LeverWall, LatchDoor, LaserDoor, HardMine
@@ -31,58 +21,58 @@ class Level:
 
         PropertyRegistry.reset(initial_registry)
 
-        # static background tile at every cell, default Floor
+
         self.tiles: dict[tuple[int, int], GameObject] = {}
         for x in range(width):
             for y in range(height):
                 self.tiles[(x, y)] = Floor(x, y)
 
         self.player: Player | None = None
-        self.dynamic_objects: list[GameObject] = []  # Platform/Door/Trap/CodeBlock
+        self.dynamic_objects: list[GameObject] = []
         self.circuits: list[CircuitLine] = []
 
         self.won = False
         self.dead = False
-        # True when the character has fallen into a Path void: it is gone
-        # from the board (invisible) for the rest of the run.
+
+
         self.player_invisible = False
         self.moves = 0
         self.rule_mode = "circuit"
         self.fusion_enabled = True
         self.active_rules: list[str] = []
-        self.fusion_press_count = 0   # tracks Stone./open presses toward fusion
-        # Relocated-flag target (x, y) for Flag.moved levels (map10):
-        # while Flag.moved is True the win cell is here, not the Goal tiles.
+        self.fusion_press_count = 0
+
+
         self.flag2: tuple[int, int] | None = None
-        # Forge-crafted finish (map14): while Gate.at is True the win cell
-        # is here; the level starts with no Goal tiles at all.
+
+
         self.gate2: tuple[int, int] | None = None
-        # Beacon finish (map17): while Beacon.lit is True the win cell is
-        # here, inside an isolated chamber reachable only by portal.
+
+
         self.beacon2: tuple[int, int] | None = None
-        # Lever pedestals (x, y, lever_name) + reversible fired flags.
-        # lever_fired[lname] True while the lever holds its shove + wall.
-        # lever_moved[lname] tracks the shoved CodeBlock (or None) plus
-        # origin/dest so deactivation can pull it back.
+
+
+
+
         self.levers: list[tuple[int, int, str]] = []
         self.lever_fired: dict[str, bool] = {}
         self.lever_moved: dict[str, tuple] = {}
-        # Crafting recipes: [((kind,val),(kind,val),(kind,val)), ...]
-        # Pushing the first two together (either order, orthogonal contact
-        # via a push) consumes both and spawns the third at the target cell.
+
+
+
         self.recipes: list = []
-        # -- spatial index (perf) --------------------------------------
-        # block_at()/terrain_at() used to scan the whole dynamic_objects
-        # list per cell: O(cells * objects) per frame (~130k checks on
-        # big maps). These dicts make lookups O(1); rebuilt once per
-        # frame/move instead of once per cell.
+
+
+
+
+
         self._block_map: dict[tuple[int, int], CodeBlock] = {}
         self._terrain_map: dict[tuple[int, int], GameObject] = {}
         self._warp_map: dict[tuple[int, int], GameObject] = {}
         self._bpos_cache: dict | None = None
         self._index_dirty = True
 
-    # -- level construction helpers -----------------------------------
+
     def add_wall_border(self):
         seen = set()
         for x in range(self.width):
@@ -113,8 +103,6 @@ class Level:
         self._index_dirty = True
 
     def _rebuild_index(self):
-        """Rebuild O(1) lookup maps from dynamic_objects. O(N), call once
-        per frame/move, not per cell."""
         block_map: dict = {}
         terrain_map: dict = {}
         warp_map: dict = {}
@@ -135,9 +123,9 @@ class Level:
         self._index_dirty = False
 
     def _ensure_index(self):
-        # Direct x/y mutation (tests, pushes) bypasses add_object, so
-        # callers that mutate positions must set _index_dirty. As a
-        # safety net, recompile/move paths force a rebuild (see below).
+
+
+
         if self._index_dirty or self._bpos_cache is None:
             self._rebuild_index()
 
@@ -145,14 +133,13 @@ class Level:
         self.circuits.append(circuit)
 
     def add_warp_pair(self, x1, y1, x2, y2):
-        """Place two Warp objects that point to each other."""
         w1 = Warp(x1, y1, x2, y2)
         w2 = Warp(x2, y2, x1, y1)
         self.dynamic_objects.append(w1)
         self.dynamic_objects.append(w2)
         self._index_dirty = True
 
-    # -- lookups --------------------------------------------------------
+
     def block_at(self, x, y) -> CodeBlock | None:
         self._ensure_index()
         return self._block_map.get((x, y))
@@ -162,9 +149,9 @@ class Level:
         return self._terrain_map.get((x, y))
 
     def object_at(self, x, y) -> GameObject | None:
-        # Block-first ordering so stacked cells resolve to the pushable token.
-        # Known edge case: a block resting on a cell that later becomes
-        # blocking stays there. Do not add special handling.
+
+
+
         b = self.block_at(x, y)
         if b is not None:
             return b
@@ -182,21 +169,18 @@ class Level:
         return self.tiles.get((x, y), Wall(x, y))
 
     def _apply_seal_walls(self):
-        """SealWall.is_blocking() reads the registry live, so no explicit
-        update is needed here. This method exists as a hook for future use
-        and to make the architecture explicit."""
         pass
 
-    # -- core game loop ---------------------------------------------------
+
     def recompile_circuits(self):
-        # Force a fresh index: block positions may have been mutated
-        # directly (pushes, tests) since the last rebuild.
+
+
         self._rebuild_index()
         if getattr(self, "rule_mode", "circuit") == "global":
             self._compile_global_rules()
             self._apply_seal_walls()
-            # Like the circuit-mode void check below: if the new rules turned
-            # the cell under the player lethal, the run ends on the spot.
+
+
             if self.player is not None and not self.won and not self.dead:
                 under = self.terrain_at(self.player.x, self.player.y)
                 if under is not None and under.is_lethal():
@@ -204,10 +188,10 @@ class Level:
                     if isinstance(under, Platform) and under.is_void():
                         self.player_invisible = True
             return
-        # Compilation is a projection of the *current* board, not a one-way
-        # mutation.  Start from the level defaults every time so breaking a
-        # statement immediately restores its wall/path behaviour and a later
-        # valid statement can compile again.
+
+
+
+
         PropertyRegistry.reset(self.initial_registry)
         bpos = self.blocks_by_pos()
         for c in self.circuits:
@@ -217,8 +201,8 @@ class Level:
             c.try_compile(bpos, owned_targets=owned)
         self._apply_seal_walls()
 
-        # If the logic just collapsed the path the character is standing on
-        # back into a void, it falls in on the spot.
+
+
         if self.player is not None and not self.won and not self.dead:
             standing = self.object_at(self.player.x, self.player.y)
             if isinstance(standing, Platform) and standing.is_void():
@@ -226,7 +210,6 @@ class Level:
                 self.player_invisible = True
 
     def _move_player_circuit(self, direction: str) -> str:
-        """Attempt to move the player. Returns a short status message."""
         if direction not in DIRS or self.won or self.dead:
             return ""
         dx, dy = DIRS[direction]
@@ -246,9 +229,9 @@ class Level:
         occ = self.object_at(nx, ny)
         if occ is not None:
             if isinstance(occ, CodeBlock):
-                # A push only moves the block directly in front of the player.
-                # Blocks cannot be chain-pushed: an occupied destination stops
-                # the move, keeping adjacent blocks independent.
+
+
+
                 bx, by = nx + dx, ny + dy
                 if not (0 <= bx < self.width and 0 <= by < self.height):
                     return "Can't push that off the grid."
@@ -262,8 +245,8 @@ class Level:
                     return "Can't push -- sealed wall behind the block."
                 target = self.object_at(bx, by)
                 if target is not None:
-                    # Shoving the Path./open pair straight into each other
-                    # fuses them on the spot.
+
+
                     if is_merge_pair(occ, target):
                         return self._fuse_pair(occ, target)
                     return "Can't push -- something is already there."
@@ -273,20 +256,20 @@ class Level:
                 warp = self.warp_at(self.player.x, self.player.y)
                 if warp is not None:
                     dest_x, dest_y = warp.pair_x, warp.pair_y
-                    # only teleport if destination cell has no block on it
+
                     if self.block_at(dest_x, dest_y) is None:
                         self.player.x, self.player.y = dest_x, dest_y
                 self.moves += 1
-                # Path. and open fuse the moment they end up side by side —
-                # no repeated pressing required.
+
+
                 partner = self._merge_partner(occ)
                 if partner is not None:
                     return self._fuse_pair(occ, partner)
                 self.recompile_circuits()
             else:
-                # Platform / Door / Trap / Laser -- consult live behaviour.
-                # Live laser beams vaporise the character (ash death)
-                # instead of merely blocking.
+
+
+
                 if isinstance(occ, LaserDoor) and occ.is_blocking():
                     self.player.x, self.player.y = nx, ny
                     self.moves += 1
@@ -295,12 +278,12 @@ class Level:
                             "Game over.")
                 if occ.is_blocking():
                     return f"{occ.__class__.__name__} is solid -- you can't pass."
-                # not blocking: step onto/through it
+
                 self.player.x, self.player.y = nx, ny
                 warp = self.warp_at(self.player.x, self.player.y)
                 if warp is not None:
                     dest_x, dest_y = warp.pair_x, warp.pair_y
-                    # only teleport if destination cell has no block on it
+
                     if self.block_at(dest_x, dest_y) is None:
                         self.player.x, self.player.y = dest_x, dest_y
                 self.moves += 1
@@ -318,7 +301,7 @@ class Level:
             warp = self.warp_at(self.player.x, self.player.y)
             if warp is not None:
                 dest_x, dest_y = warp.pair_x, warp.pair_y
-                # only teleport if destination cell has no block on it
+
                 if self.block_at(dest_x, dest_y) is None:
                     self.player.x, self.player.y = dest_x, dest_y
             self.moves += 1
@@ -334,7 +317,6 @@ class Level:
         return ""
 
     def move_player(self, direction: str) -> str:
-        """Dispatch to the circuit or global mover based on rule_mode."""
         if getattr(self, "rule_mode", "circuit") == "global":
             return self._move_player_global(direction)
         return self._move_player_circuit(direction)
@@ -342,9 +324,9 @@ class Level:
     def _compile_global_rules(self) -> None:
         from blocks import CLASS, PROP, OP, VALUE, NOT
 
-        # Stone/Seal compile automatically via the generic scanner as long
-        # as they appear in initial_registry (see RULES_REGISTRY). Ensure
-        # defaults for levels built before the extension.
+
+
+
         self.initial_registry.setdefault("Stone", {"solid": True})
         self.initial_registry.setdefault("Seal", {"active": True})
         self.initial_registry.setdefault("Latch", {"isOpen": False})
@@ -401,7 +383,6 @@ class Level:
                 self.active_rules.append(f"{cls_name}.{canon} = {raw}")
 
     def _craft_result(self, a, b):
-        """Return (kind, value) if blocks a,b match a recipe, else None."""
         for (k1, v1), (k2, v2), (kr, vr) in self.recipes:
             if ((a.kind, a.value) == (k1, v1) and (b.kind, b.value) == (k2, v2)) or \
                ((a.kind, a.value) == (k2, v2) and (b.kind, b.value) == (k1, v1)):
@@ -414,11 +395,11 @@ class Level:
         dx, dy = DIRS[direction]
         nx, ny = self.player.x + dx, self.player.y + dy
 
-        # 1. Out of bounds -> reject.
+
         if not (0 <= nx < self.width and 0 <= ny < self.height):
             return "You can't leave the grid."
 
-        # 2. Wall tile at target that is blocking -> reject.
+
         tile = self.tile_at(nx, ny)
         if isinstance(tile, Wall) and tile.is_blocking():
             return "A wall blocks the way."
@@ -427,8 +408,8 @@ class Level:
         if isinstance(seal, SealWall) and seal.is_blocking():
             return "A sealed wall blocks the way."
 
-        # 3. terrain at target that is blocking -> reject,
-        # except live laser beams which vaporise the character (ash death).
+
+
         terr = self.terrain_at(nx, ny)
         if isinstance(terr, LaserDoor) and terr.is_blocking():
             self.player.x, self.player.y = nx, ny
@@ -438,7 +419,7 @@ class Level:
         if terr is not None and terr.is_blocking():
             return f"{terr.__class__.__name__} is solid -- you can't pass."
 
-        # 4. Push a block if one sits at the target.
+
         blk = self.block_at(nx, ny)
         if blk is not None:
             bx, by = nx + dx, ny + dy
@@ -478,19 +459,19 @@ class Level:
             blk.x, blk.y = bx, by
             self._index_dirty = True
 
-        # 5. Move the player, then recompile with the new board.
+
         self.player.x, self.player.y = nx, ny
         warp = self.warp_at(self.player.x, self.player.y)
         if warp is not None:
             dest_x, dest_y = warp.pair_x, warp.pair_y
-            # only teleport if destination cell has no block on it
+
             if self.block_at(dest_x, dest_y) is None:
                 self.player.x, self.player.y = dest_x, dest_y
         self.moves += 1
         self.recompile_circuits()
         lever_msg = self._fire_levers()
 
-        # 6. AFTER recompile: lethality then relocated-flag / goal.
+
         under = self.terrain_at(self.player.x, self.player.y)
         if under is not None and under.is_lethal():
             self.dead = True
@@ -518,8 +499,6 @@ class Level:
         return lever_msg
 
     def _check_flag_win(self) -> str | None:
-        """Relocated-flag win (map10): while Flag.moved is True the finish
-        is the hidden chamber cell, and the visible Goal tiles are decoys."""
         if not bool(PropertyRegistry.get("Flag", "moved", False)):
             return None
         if self.flag2 is not None and (self.player.x, self.player.y) == self.flag2:
@@ -528,8 +507,6 @@ class Level:
         return None
 
     def _check_gate_win(self) -> str | None:
-        """Forge finish (map14): while Gate.at is True the win cell is
-        gate2, generated inside an isolated chamber (no Goal tiles)."""
         if not bool(PropertyRegistry.get("Gate", "at", False)):
             return None
         if self.gate2 is not None and (self.player.x, self.player.y) == self.gate2:
@@ -538,8 +515,6 @@ class Level:
         return None
 
     def _check_beacon_win(self) -> str | None:
-        """Beacon finish (map17): while Beacon.lit is True the win cell is
-        beacon2, generated inside an isolated chamber (no Goal tiles)."""
         if not bool(PropertyRegistry.get("Beacon", "lit", False)):
             return None
         if self.beacon2 is not None and (self.player.x, self.player.y) == self.beacon2:
@@ -567,15 +542,6 @@ class Level:
         return True
 
     def _fire_levers(self) -> str:
-        """Reversible lever shoves (Map17 V/U/N/K).
-
-        While <LeverN>.active is True the lever fires once: the token
-        directly below it is shoved one cell down (when the destination
-        is free) and a single LeverWall appears at the vacated origin
-        cell. When active flips back to False the wall is removed, the
-        shoved token is pulled back to its origin, and the handle flips
-        back up. Returns a status message when something fired/released.
-        """
         if not getattr(self, "levers", None):
             return ""
         msgs = []
@@ -624,7 +590,6 @@ class Level:
         return ""
 
     def _check_goal_win(self, tile: GameObject) -> str | None:
-        """Normal Goal-tile win, suppressed while the flag is relocated."""
         if bool(PropertyRegistry.get("Flag", "moved", False)):
             return None
         if isinstance(tile, Goal):
@@ -633,7 +598,6 @@ class Level:
         return None
 
     def _merge_partner(self, block: CodeBlock) -> CodeBlock | None:
-        """The Path./open token sitting orthogonally next to `block`, if any."""
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
             other = self.object_at(block.x + dx, block.y + dy)
             if is_merge_pair(block, other):
@@ -641,18 +605,11 @@ class Level:
         return None
 
     def _fuse_pair(self, pushed: CodeBlock, other: CodeBlock) -> str:
-        """
-        The Path. and open tokens are consumed the moment they are put
-        together -- one contact is enough, no repeated pressing.  Both
-        blocks vanish, any pre-existing goal (there is only ever one
-        flag) is removed, and a brand-new Goal tile blooms on the cell
-        the pushed token occupies.
-        """
-        # Stone./open requires 3 presses; Platform./open fuses on 1 contact
+
         is_stone_pair = {(pushed.kind, pushed.value), (other.kind, other.value)} == {
             ("CLASS", "Stone"), ("PROP", "isOpen")}
         if is_stone_pair:
-            # Like map8.html: the pair resists fusion while the seal holds.
+
             if bool(PropertyRegistry.get("Seal", "active", True)):
                 return ("Stone. + open resist fusion while Seal.active = True. "
                         "Open the seal vault first.")
@@ -661,11 +618,11 @@ class Level:
                 return (f"Stone. + open: press {self.fusion_press_count}/3 "
                         f"to fuse into a new GOAL.")
             self.fusion_press_count = 0
-            # fall through to the actual fusion below
-        else:
-            self.fusion_press_count = 0  # reset if a different pair is touched
 
-        # --- existing fusion logic (unchanged) ---
+        else:
+            self.fusion_press_count = 0
+
+
         names = f"{pushed.glyph().strip()} + {other.glyph().strip()}"
         gx, gy = pushed.x, pushed.y
         self.dynamic_objects = [
@@ -689,7 +646,7 @@ class Level:
     def is_over(self) -> bool:
         return self.won or self.dead
 
-    # -- rendering --------------------------------------------------------
+
     def render(self) -> str:
         bpos = self.blocks_by_pos()
         flag_moved = bool(PropertyRegistry.get("Flag", "moved", False))
@@ -704,7 +661,7 @@ class Level:
         for y in range(self.height):
             row_cells = []
             for x in range(self.width):
-                # An invisible character (fallen into a void) is not drawn.
+
                 on_player = (self.player is not None and self.player.x == x
                              and self.player.y == y
                              and not (self.dead and self.player_invisible))
@@ -712,7 +669,7 @@ class Level:
                     if self.dead:
                         under = self.terrain_at(x, y)
                         if type(under) is Trap:
-                            # exact Trap (not HiddenBoom): skeleton
+
                             glyph = "SKEL"
                         elif isinstance(under, (LaserDoor, HiddenBoom,
                                                 BorderMine, HardMine)):
@@ -723,7 +680,7 @@ class Level:
                         glyph = self.player.glyph()
                 elif (flag_moved and flag2 is not None and (x, y) == flag2
                         and self.block_at(x, y) is None):
-                    # Relocated finish flag in its hidden chamber.
+
                     glyph = Goal(x, y).glyph()
                 elif (gate_on and gate2 is not None and (x, y) == gate2
                         and self.block_at(x, y) is None):
@@ -732,9 +689,9 @@ class Level:
                         and self.block_at(x, y) is None):
                     glyph = Goal(x, y).glyph()
                 else:
-                    # Block first, then terrain, then the static tile, so a
-                    # block stacked on terrain (e.g. on an open door or a
-                    # vanished table cell) still reads as the block.
+
+
+
                     blk = self.block_at(x, y)
                     if blk is not None:
                         glyph = blk.glyph()
@@ -743,7 +700,7 @@ class Level:
                         if terr is not None:
                             glyph = terr.glyph()
                         elif flag_moved and isinstance(self.tile_at(x, y), Goal):
-                            # Decoy flag while relocated: reads as plain floor.
+
                             glyph = Floor(x, y).glyph()
                         else:
                             glyph = self.tile_at(x, y).glyph()

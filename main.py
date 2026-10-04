@@ -30,12 +30,6 @@ def parse_args(argv=None):
         action="store_true",
         help="Skip the home menu and jump straight into single-player.",
     )
-    parser.add_argument(
-        "--renderer",
-        choices=("tk", "panda"),
-        default="tk",
-        help="2D Tkinter view (default) or the Phase-1 Panda3D graybox.",
-    )
     return parser.parse_args(argv)
 
 
@@ -65,18 +59,9 @@ def main(argv=None):
     start_index = args.level - 1
 
     def launch_solo():
-        if args.renderer == "panda":
-            try:
-                from panda_app import PandaView
-            except ImportError as exc:
-                print(f"3D renderer unavailable ({exc}); "
-                      f"install it with: pip install panda3d")
-                sys.exit(3)
-            PandaView(start_index=start_index).run()
-            return
         if GUIEngine is not None:
             try:
-                GUIEngine(start_index=start_index).run()
+                GUIEngine(start_index=start_index, audio=music).run()
                 return
             except Exception as exc:
                 print("GUI unavailable, falling back to terminal mode:", exc)
@@ -87,6 +72,13 @@ def main(argv=None):
         except (KeyboardInterrupt, EOFError):
             print("\nGoodbye!")
 
+
+
+
+    from audio import AudioManager
+    music = AudioManager("assets/Ghost_Mansion.mp3")
+    music.play_loop()
+
     def launch_race(role, net, name, duration_s):
         if GUIEngine is None:
             print("GUI unavailable: cannot race in terminal mode.")
@@ -94,7 +86,7 @@ def main(argv=None):
         GUIEngine(start_index=0, race={
             "role": role, "net": net, "name": name,
             "duration_s": duration_s,
-        }).run()
+        }, audio=music).run()
 
     if GUIEngine is not None and not args.no_menu:
         try:

@@ -1,17 +1,3 @@
-"""lobby.py — LAN lobby host + client (same-network TCP + UDP beacons).
-
-Host:
-    LobbyHost(host_name, gamemode).start() -> TCP accept loop + UDP beacon.
-    Players join over TCP with {"type": "hello", "name": ...}.
-    Host keeps a player list and broadcasts {"type": "lobby_state", ...}.
-    host.start_game() broadcasts {"type": "start"} — gameplay itself is a
-    placeholder until gamemode level logic lands, so the lobby stays open.
-
-Client:
-    LobbyClient.discover(timeout) -> [LobbyInfo] via UDP beacons.
-    LobbyClient(name).connect(ip, port) -> hello/welcome handshake,
-    then background listener fills .events / .players / .started.
-"""
 from __future__ import annotations
 
 import queue
@@ -46,15 +32,14 @@ class LobbyInfo:
 
 
 def _local_ipv4s() -> list[str]:
-    """Non-loopback IPv4 addresses of this machine (best effort)."""
     found: list[str] = []
     try:
         for _target in ("8.8.8.8", "10.0.0.1", "192.168.1.1", "172.16.0.1"):
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 s.settimeout(0.5)
-                # UDP connect() sends nothing; it just reveals the source IP
-                # the OS would route with toward that destination.
+
+
                 s.connect((_target, 80))
                 ip = s.getsockname()[0]
                 if ip and not ip.startswith("127.") and ip not in found:
@@ -79,18 +64,11 @@ def _local_ipv4s() -> list[str]:
 
 
 def lan_ips() -> list[str]:
-    """Display-ready LAN IPs for 'type this on the guest' instructions."""
     ips = _local_ipv4s()
     return ips if ips else ["<unknown — same Wi-Fi as the host>"]
 
 
 def broadcast_targets() -> list[str]:
-    """UDP destinations covering global + per-interface directed broadcast.
-
-    255.255.255.255 is filtered on many Windows setups / routers, so also
-    hit x.x.x.255 for every local interface (/24 covers home LANs) plus
-    loopback (same-machine testing).
-    """
     targets = ["255.255.255.255"]
     for ip in _local_ipv4s():
         try:
@@ -134,15 +112,14 @@ class LobbyHost:
         self.race_duration_s = RACE_DURATION_S
         self.events: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
-        self._clients: list = []  # (socket, file, name)
+        self._clients: list = []
         self._running = False
         self._server: socket.socket | None = None
         self._threads: list[threading.Thread] = []
         self.bound_port: int = port
 
-    # -- lifecycle ---------------------------------------------------
+
     def start(self) -> int:
-        """Bind TCP + launch accept/beacon threads. Returns bound port."""
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("0.0.0.0", self.port))
@@ -174,20 +151,18 @@ class LobbyHost:
             except Exception:
                 pass
 
-    # -- host actions ------------------------------------------------
+
     def start_game(self, note: str = "") -> dict:
-        """Broadcast START. Placeholder: lobby stays open for later logic."""
         msg = {"type": "start", "lobby_id": self.lobby_id,
                "gamemode": self.gamemode,
-               "note": note or f"Gamemode '{self.gamemode}' gameplay coming soon."}
+               "note": note or f"Gamemode '{self.gamemode}' gameplay."}
         self.started = True
         self._broadcast(msg)
         self.events.put(("started", msg))
         return msg
 
-    # -- race ("I'm faster than you") ---------------------------------
+
     def start_race(self, duration_s: int = RACE_DURATION_S) -> dict:
-        """Begin the 10-minute roster race for everyone in the lobby."""
         self.race_duration_s = duration_s
         with self._lock:
             self.race = {name: RacerStats(name=name)
@@ -203,7 +178,6 @@ class LobbyHost:
 
     def race_update(self, name: str, levels: int, moves: int,
                     restarts: int):
-        """Record one racer's progress (host's own engine calls this)."""
         with self._lock:
             entry = self.race.get(name)
             if entry is None:
@@ -224,7 +198,6 @@ class LobbyHost:
         })
 
     def end_race(self) -> dict:
-        """Broadcast final standings when the timer expires."""
         with self._lock:
             standings = compute_standings(self.race)
         self.race_active = False
@@ -251,7 +224,7 @@ class LobbyHost:
                          "gamemode": self.gamemode, "players": players,
                          "host": self.host_name})
 
-    # -- internals ---------------------------------------------------
+
     def _accept_loop(self):
         while self._running:
             try:
@@ -321,7 +294,7 @@ class LobbyHost:
                     self.events.put(("race_progress", {"name": name,
                                                        **msg}))
                     continue
-                # Unknown chat/ping messages are ignored for now.
+
             with self._lock:
                 if name in self.players:
                     self.players.remove(name)
@@ -346,14 +319,14 @@ class LobbyHost:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         except Exception:
             pass
-        # Also answer active probes on the discovery port.
+
         listen = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             listen.bind(("0.0.0.0", DISCOVERY_PORT))
             listen.settimeout(0.2)
         except Exception:
-            listen = None  # another host owns the port; broadcast still works
+            listen = None
         while self._running:
             try:
                 with self._lock:
@@ -384,7 +357,7 @@ class LobbyHost:
                 else:
                     time.sleep(BEACON_INTERVAL_S)
                     continue
-                # pace broadcasts without blocking probe replies too long
+
                 time.sleep(BEACON_INTERVAL_S)
             except Exception:
                 time.sleep(BEACON_INTERVAL_S)
@@ -418,7 +391,6 @@ class LobbyClient:
 
     @staticmethod
     def discover(timeout: float = 2.0) -> list[LobbyInfo]:
-        """Listen for host beacons on the LAN (+ send a probe)."""
         found: dict[str, LobbyInfo] = {}
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -524,7 +496,6 @@ class LobbyClient:
         self._sock = None
 
     def send_progress(self, levels: int, moves: int, restarts: int):
-        """Report race progress to the host (no-op when disconnected)."""
         if self._sock is None:
             return
         try:

@@ -1,14 +1,13 @@
-"""tests/test_race.py -- scoring/standings + LAN race message roundtrip."""
 import os
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from multiplayer.race import (  # noqa: E402
+from multiplayer.race import (
     RACE_DURATION_S, RacerStats, compute_standings, fmt_time, score_for,
 )
-from multiplayer.lobby import LobbyHost, LobbyClient  # noqa: E402
+from multiplayer.lobby import LobbyHost, LobbyClient
 
 
 def test_duration_is_10_minutes():
@@ -40,7 +39,6 @@ def test_fmt_time():
 
 
 def _drain(client, timeout=3.0):
-    """Collect (kind, payload) for `timeout` seconds."""
     out = []
     end = time.time() + timeout
     while time.time() < end:
@@ -72,7 +70,7 @@ def test_race_message_flow():
         boards = [p for k, p in _drain(g1, timeout=1.0) if k == "race_board"]
         assert boards, "guest must receive leaderboard"
         names = [r["name"] for r in boards[-1]["standings"]]
-        assert names[0] == " speedy ".strip(), names  # fewer steps wins tie
+        assert names[0] == " speedy ".strip(), names
         assert set(names) >= {"Host", "speedy", "slowpoke"}
 
         late = LobbyClient("late")

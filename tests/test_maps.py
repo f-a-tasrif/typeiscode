@@ -1,17 +1,3 @@
-"""tests/test_maps.py -- replay HTML solutions on data-driven global levels.
-
-Parametrized by level number (5 + index into MAPS).  Each MAPS entry holds
-name, rows, start=(row, col), tokens=[(row, col, text)] and
-solution=[(moves_string, note)].  Moves translate U->w, D->s, L->a, R->d.
-
-Every step must increment level.moves (a step that doesn't is a rejected
-move), the player must never die, and level.won must be True at the end.
-On failure the first bad move index, the board and the registry are
-printed -- the solution itself is never edited.
-
-Requires maps_data.py (ported from type-is-code-maps.html, Stage 1).  If
-it is absent the run is skipped with a clear message.
-"""
 
 import os
 import sys
@@ -23,34 +9,25 @@ try:
 except ImportError:
     MAPS = None
 
-from levels_data import _build_from_map  # noqa: E402
+from levels_data import _build_from_map
 
 DIRS = {"U": "w", "D": "s", "L": "a", "R": "d"}
 
-# (level_no, after_phase_index, class, prop, expected): registry spot-checks
-# run mid-replay. Phase indices are 0-based. Keys are ALL_LEVELS numbers.
+
+
 PHASE_CHECKS = {
     3: [(0, "Platform", "isSolid", True)],
     10: [(3, "Platform", "isSolid", True)],
 }
 
 
-# Levels whose HTML solutions cannot complete go here as
-# {level_no: reason}. Currently empty: every replay passes.
-# (Level numbers follow ALL_LEVELS; MAPS[0] has no level.)
+
+
+
 EXPECTED_FAIL = {}
 
 
 def replay(entry, checks=(), builder=None):
-    """Replay one MAPS entry.
-
-    Builds via the ALL_LEVELS builder when given (so builder tweaks
-    like value flips apply), else raw from the entry data. Stops at
-    the first win: our engine ends the level the moment the player
-    steps on the goal, so moves past that point are engine no-ops,
-    not solution steps.  Returns (level, rejected, died_at, won,
-    check_failures).
-    """
     from registry import PropertyRegistry
     if builder is not None:
         lvl = builder()
@@ -118,11 +95,11 @@ if __name__ == "__main__":
     failed = 0
     xfailed = 0
     ran = 0
-    # MAPS[0] has no level (old level 5 was deleted); levels are built via
-    # their ALL_LEVELS builders so builder tweaks apply.
-    # Explicit builder mapping (independent of ALL_LEVELS order).
-    # Numbers are ALL_LEVELS positions: 3=build_level6, 4=build_level7,
-    # 10=build_level8 (levels 2, 3, 5 were deleted).
+
+
+
+
+
     from levels_data import build_level6, build_level7, build_level8
     entries = [(3, build_level6, MAPS[2]),
                (4, build_level7, MAPS[3]),

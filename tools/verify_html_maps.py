@@ -1,20 +1,3 @@
-"""tools/verify_html_maps.py -- Python port of the HTML rules() and sim().
-
-Exact semantics from type-is-code-maps.html:
-- Defaults: Path=True, Door=False, Trap=True.
-- A rule is a token whose text ends with "." at (r, c). It needs "=" at
-  (r, c+2) and a value at (r, c+3). If the token at (r, c+3) is "NOT",
-  the value is at (r, c+4) and is inverted. Horizontal only. Later
-  tokens override earlier ones.
-- Blocking cells for player AND blocks: "#", "T" while Path is True,
-  "D" while Door is False. Traps never block.
-- Move: if the target cell blocks, the move is rejected. Else if a
-  token is there, push it one cell; the push is rejected if the
-  destination blocks or holds another token (no chain pushes). The
-  player moves only if not rejected.
-- After each move, dead = player on "X" while Trap is True (rules
-  recomputed AFTER the push).
-"""
 
 import os
 import sys
@@ -31,7 +14,7 @@ def rules(blocks):
     R = {"Path": True, "Door": False, "Trap": True}
     for r, c, t in blocks:
         if t.endswith("."):
-            g = lambda x, _r=r, _c=c: at.get((_r, _c + x))  # noqa: E731
+            g = lambda x, _r=r, _c=c: at.get((_r, _c + x))
             if g(2) == "=":
                 v = g(3)
                 n = False
@@ -93,7 +76,7 @@ def main():
               f"solved={solved} rejected={len(rej)} deaths={len(deaths)}")
         if rej or deaths or not solved:
             ok = False
-            # map global move index -> phase
+
             ends = []
             a = 0
             for moves, _note in m["solution"]:

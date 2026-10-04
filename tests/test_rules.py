@@ -1,19 +1,13 @@
-"""tests/test_rules.py -- unit tests for Level rule_mode="global".
-
-Covers: door open/closed for player and block, "= NOT True" gives False,
-trap turning lethal under a standing player kills, rejected moves don't
-increment moves (or change any state).
-"""
 
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from level import Level  # noqa: E402
-from game_object import Door, Trap  # noqa: E402
-from blocks import CodeBlock, CLASS, PROP, OP, VALUE, NOT  # noqa: E402
-from registry import PropertyRegistry  # noqa: E402
+from level import Level
+from game_object import Door, Trap
+from blocks import CodeBlock, CLASS, PROP, OP, VALUE, NOT
+from registry import PropertyRegistry
 
 BASE = {
     "Wall": {"solid": True},
@@ -31,7 +25,6 @@ def make_global(w=7, h=5, reg=None):
 
 
 def add_rule(lvl, x, y, cls_name, prop_name, raw_value, negated=False):
-    """Lay a horizontal rule starting at (x, y). Returns the value block."""
     lvl.add_object(CodeBlock(x, y, CLASS, cls_name))
     lvl.add_object(CodeBlock(x + 1, y, PROP, prop_name))
     lvl.add_object(CodeBlock(x + 2, y, OP, "="))
@@ -109,17 +102,17 @@ def test_not_true_gives_false():
 
 def test_trap_flip_kills_standing_player():
     lvl = make_global()
-    add_rule(lvl, 0, 0, "Trap", "isLethal", True, negated=True)  # Trap safe
+    add_rule(lvl, 0, 0, "Trap", "isLethal", True, negated=True)
     lvl.set_player(1, 2)
     lvl.add_object(Trap(2, 2))
     lvl.recompile_circuits()
-    msg = lvl.move_player("d")  # step onto the safe trap
+    msg = lvl.move_player("d")
     assert (lvl.player.x, lvl.player.y) == (2, 2), msg
     assert not lvl.dead
     m1 = lvl.moves
-    # Break the safety rule directly, then recompile: trap turns lethal
-    # under the standing player.
-    victim = lvl.block_at(4, 0)  # the True value block
+
+
+    victim = lvl.block_at(4, 0)
     assert victim is not None
     victim.x, victim.y = 6, 4
     lvl.recompile_circuits()
@@ -143,21 +136,21 @@ def test_step_onto_lethal_trap_kills():
 def test_rejected_moves_change_nothing():
     lvl = make_global(w=5, h=5)
     lvl.set_player(1, 1)
-    lvl.add_wall(2, 1)  # blocking wall tile ahead
+    lvl.add_wall(2, 1)
     lvl.add_object(CodeBlock(1, 2, VALUE, True))
-    lvl.add_object(CodeBlock(1, 3, VALUE, False))  # chain-push target
+    lvl.add_object(CodeBlock(1, 3, VALUE, False))
     lvl.recompile_circuits()
     snap_blocks = sorted((b.x, b.y, b.kind, str(b.value)) for b in lvl.blocks_by_pos().values())
     snap_reg = PropertyRegistry.snapshot()
     m0 = lvl.moves
 
-    msg1 = lvl.move_player("d")  # into blocking wall
+    msg1 = lvl.move_player("d")
     assert (lvl.player.x, lvl.player.y) == (1, 1)
     lvl.set_player(0, 0)
-    msg_oob = lvl.move_player("a")  # out of bounds
+    msg_oob = lvl.move_player("a")
     assert (lvl.player.x, lvl.player.y) == (0, 0)
     lvl.set_player(1, 1)
-    msg3 = lvl.move_player("s")  # chain push: (1,2)->(1,3) occupied
+    msg3 = lvl.move_player("s")
     assert (lvl.player.x, lvl.player.y) == (1, 1)
 
     assert lvl.moves == m0, "no rejected move may increment moves"
@@ -174,7 +167,7 @@ def test_global_never_fuses():
     lvl.add_object(CodeBlock(2, 2, CLASS, "Platform"))
     lvl.add_object(CodeBlock(3, 2, PROP, "isOpen"))
     lvl.recompile_circuits()
-    msg = lvl.move_player("d")  # push Path. into open: must reject, never fuse
+    msg = lvl.move_player("d")
     assert lvl.block_at(2, 2) is not None or lvl.block_at(3, 2) is not None
     assert not any(isinstance(t, object) and t.__class__.__name__ == "Goal"
                    for t in lvl.tiles.values() if t.__class__.__name__ == "Goal") or True

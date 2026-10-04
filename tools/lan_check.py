@@ -1,26 +1,13 @@
-"""tools/lan_check.py -- diagnose same-network lobby discovery + join.
-
-Run on the HOST machine:
-    python tools/lan_check.py host
-Run on the GUEST machine (same Wi-Fi):
-    python tools/lan_check.py find
-The guest should list the host's lobby. If it doesn't, discovery
-broadcasts are blocked -- type the host IP manually in the game
-(see the HOST IP line on the host's lobby screen).
-
-Guest direct-connect test (no discovery involved):
-    python tools/lan_check.py join <host-ip> [port]
-"""
 import os
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from multiplayer.lobby import (  # noqa: E402
+from multiplayer.lobby import (
     LobbyClient, LobbyHost, broadcast_targets, lan_ips,
 )
-from multiplayer.protocol import DEFAULT_LOBBY_PORT  # noqa: E402
+from multiplayer.protocol import DEFAULT_LOBBY_PORT
 
 
 def cmd_host():

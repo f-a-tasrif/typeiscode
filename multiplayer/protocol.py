@@ -1,13 +1,3 @@
-"""protocol.py — wire constants and JSON-line helpers for LAN lobbies.
-
-Transport:
-  * Lobby advertisement: UDP beacons on DISCOVERY_PORT (broadcast).
-  * Lobby join/state: TCP, one JSON object per line (UTF-8, ``\\n`` terminated).
-
-Gamemode note: the actual co-op/race/versus level logic lands later.
-The lobby only carries the selected mode string so create/join/start
-already works end to end.
-"""
 from __future__ import annotations
 
 import json
@@ -19,12 +9,12 @@ DEFAULT_LOBBY_PORT = 28765
 MAX_PLAYERS = 4
 BEACON_INTERVAL_S = 1.0
 
-# Placeholder gamemodes — selection is stored on the lobby, gameplay later.
-# Ids are stable (tests + wire format); labels match the menu hub wording.
+
+
 GAMEMODES: list[dict[str, str]] = [
-    {"id": "co-op-puzzle", "label": "Win together (coming soon)"},
-    {"id": "race", "label": "I'm faster than you (coming soon)"},
-    {"id": "versus", "label": "Duel (coming soon)"},
+    {"id": "co-op-puzzle", "label": "Win together"},
+    {"id": "race", "label": "I'm faster than you"},
+    {"id": "versus", "label": "Duel"},
 ]
 
 GAMEMODE_IDS = [g["id"] for g in GAMEMODES]

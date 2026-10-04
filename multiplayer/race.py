@@ -1,16 +1,8 @@
-"""race.py — "I'm faster than you" LAN race rules (no GUI, no sockets).
-
-Format: every connected player races the full single-player roster
-solo on their own machine.  Winner = most levels solved when the
-10-minute timer expires.  Ties break on fewest restarts, then fewest
-total steps.  Score mirrors that order so the panel can show one number
-plus the breakdown.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-RACE_DURATION_S = 10 * 60  # 10 minutes
+RACE_DURATION_S = 10 * 60
 SCORE_PER_LEVEL = 10000
 SCORE_PER_RESTART = -100
 SCORE_PER_STEP = -1
@@ -45,7 +37,6 @@ class Standing:
 
 
 def compute_standings(stats: list[RacerStats] | dict[str, RacerStats]) -> list[Standing]:
-    """Rank racers: most levels, then fewest restarts, then fewest steps."""
     racers = list(stats.values()) if isinstance(stats, dict) else list(stats)
     racers.sort(key=lambda r: (-r.levels, r.restarts, r.moves, r.name))
     out: list[Standing] = []
