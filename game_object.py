@@ -159,6 +159,9 @@ class Warp(GameObject):
 
 class HiddenBoom(Trap):
 
+    def is_lethal(self) -> bool:
+        return True
+
     def glyph(self) -> str:
 
         return "    "
