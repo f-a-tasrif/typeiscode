@@ -938,8 +938,8 @@ def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = Fa
 
     photo = None
     try:
-        # Use frame_row=1 for open door variant from sprite sheet
-        photo = _door_photo(size, frame_col=0, frame_row=1)
+        # Use frame_col=4 (last frame of opening animation) on row 0 for fully open door
+        photo = _door_photo(size, frame_col=4, frame_row=0)
     except Exception:
         photo = None
     if photo is not None:
