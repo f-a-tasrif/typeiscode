@@ -1,4 +1,3 @@
-
 from level import Level
 from game_object import Platform, Door, Trap, HiddenBoom, BorderMine, Floor, SealWall, Seal2Wall, Seal3Wall, Seal4Wall, Seal5Wall, Seal6Wall, LeverPedestal, LatchDoor, LaserDoor, Stone, HardMine
 from blocks import CodeBlock, CircuitLine, CLASS, PROP, OP, VALUE, NOT
@@ -6,6 +5,8 @@ from maps_data import MAPS
 
 DEFAULT_REGISTRY = {
     "Wall": {"solid": True},
+
+
 
 
 
@@ -20,6 +21,8 @@ DEFAULT_REGISTRY = {
 
 RULES_REGISTRY = {
     "Wall": {"solid": True},
+
+
 
 
 
@@ -44,7 +47,6 @@ RULES_REGISTRY = {
     "Gate": {"at": False},
     "Flag": {"moved": False},
 }
-
 
 
 MAP_TOKENS: dict[str, tuple[str, object]] = {
@@ -192,7 +194,7 @@ def _flip_value_block(lvl: Level, entry: dict, text: str) -> None:
 def build_level1() -> Level:
     
     W, H = 16, 7
-    lvl = Level("1", W, H, DEFAULT_REGISTRY)
+    lvl = Level("Level 1", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
     lvl.set_player(1, 5)
     lvl.set_goal(14, 5)
@@ -217,37 +219,94 @@ def build_level1() -> Level:
     return lvl
 
 
-def build_level4() -> Level:
+def build_level2() -> Level:
     
-    e = MAPS[3]
-    return _build_from_map("2",
-                           e["rows"], e["start"], e["tokens"])
+    e = MAPS[1]
+    return _build_from_map("Level 2", e["rows"], e["start"], e["tokens"])
 
 
-def build_level6() -> Level:
+def build_level3() -> Level:
     
     e = MAPS[2]
-    lvl = _build_from_map("3",
-                          e["rows"], e["start"], e["tokens"])
+    lvl = _build_from_map("Level 3", e["rows"], e["start"], e["tokens"])
 
 
     _flip_value_block(lvl, e, "True")
     return lvl
 
 
-def build_level7() -> Level:
+def build_level4() -> Level:
+    
+    e = MAPS[3]
+    lvl = _build_from_map("Level 4", e["rows"], e["start"], e["tokens"])
+    _flip_value_block(lvl, e, "False")
+    return lvl
+
+
+def build_level5() -> Level:
     
     e = MAPS[4]
-    lvl = _build_from_map("4",
-                          e["rows"], e["start"], e["tokens"])
-    _flip_value_block(lvl, e, "False")
+    lvl = _build_from_map("Level 5", e["rows"], e["start"], e["tokens"])
+    return lvl
+
+
+def build_level6() -> Level:
+    
+    e = MAPS[5]
+    lvl = _build_from_map("Level 6 - Vault Cathedral", e["rows"], e["start"], e["tokens"],
+                          stone_mode=True)
+    for w in e.get("warp", []):
+        lvl.add_warp_pair(w[1], w[0], w[3], w[2])
+    return lvl
+
+
+def build_level7() -> Level:
+    
+    e = MAPS[6]
+    lvl = _build_from_map("Level 7 - The Relocating Flag", e["rows"], e["start"], e["tokens"],
+                          stone_mode=True)
+    for w in e.get("warp", []):
+        lvl.add_warp_pair(w[1], w[0], w[3], w[2])
+
+
+    lvl.add_wall_border()
+    f2 = e.get("f2")
+    if f2 is not None:
+
+        lvl.flag2 = (f2[1], f2[0])
     return lvl
 
 
 def build_level8() -> Level:
     
+    e = MAPS[7]
+    return _build_from_map("Level 8 - The Forge Citadel", e["rows"], e["start"],
+                           e["tokens"], warp=e.get("warp"),
+                           stone_mode=True, rec=e.get("rec"),
+                           f2=e.get("f2"), border_mines=True)
+
+
+def build_level9() -> Level:
+    
+    e = MAPS[8]
+    return _build_from_map("Level 9 - Nested Vaults & Timing Window", e["rows"],
+                           e["start"], e["tokens"], warp=e.get("warp"),
+                           stone_mode=True, border_mines=True, swap_sz=True)
+
+
+def build_level10() -> Level:
+    
+    e = MAPS[9]
+    return _build_from_map("Level 10 - The Cascade Vaults Undercroft", e["rows"],
+                           e["start"], e["tokens"], warp=e.get("warp"),
+                           stone_mode=True, border_mines=True,
+                           beacon2=e.get("f2"))
+
+
+def build_level11() -> Level:
+    
     W, H = 28, 12
-    lvl = Level("10 - If one path closes, another opens. ", W, H, DEFAULT_REGISTRY)
+    lvl = Level("Level 11 - If one path closes, another opens.", W, H, DEFAULT_REGISTRY)
     lvl.add_wall_border()
     lvl.set_player(1, 10)
     lvl.set_goal(26, 10)
@@ -261,9 +320,6 @@ def build_level8() -> Level:
             lvl.add_wall(x, 9)
 
 
-
-
-
     for x in range(13, W - 1):
         if x != doorB:
             lvl.add_object(BorderMine(x, 9))
@@ -271,7 +327,6 @@ def build_level8() -> Level:
 
     for y in range(1, 9):
         lvl.add_wall(12, y)
-
 
 
     lvl.add_object(Platform(obstacleA, 10))
@@ -306,56 +361,5 @@ def build_level8() -> Level:
     return lvl
 
 
-
-def build_level9() -> Level:
-    e = MAPS[5]
-    lvl = _build_from_map("5 - Vault cathedral", e["rows"], e["start"], e["tokens"],
-                          stone_mode=True)
-    for w in e.get("warp", []):
-        lvl.add_warp_pair(w[1], w[0], w[3], w[2])
-    return lvl
-
-
-def build_level10() -> Level:
-    e = MAPS[6]
-    lvl = _build_from_map("6 - The Relocating Flag", e["rows"], e["start"], e["tokens"],
-                          stone_mode=True)
-    for w in e.get("warp", []):
-        lvl.add_warp_pair(w[1], w[0], w[3], w[2])
-
-
-    lvl.add_wall_border()
-    f2 = e.get("f2")
-    if f2 is not None:
-
-        lvl.flag2 = (f2[1], f2[0])
-    return lvl
-
-
-def build_level11() -> Level:
-    e = MAPS[7]
-    return _build_from_map("7 - The Forge Citadel", e["rows"], e["start"],
-                           e["tokens"], warp=e.get("warp"),
-                           stone_mode=True, rec=e.get("rec"),
-                           f2=e.get("f2"), border_mines=True)
-
-
-def build_level12() -> Level:
-    e = MAPS[8]
-    return _build_from_map("8 - Nested Vaults & Timing Window", e["rows"],
-                           e["start"], e["tokens"], warp=e.get("warp"),
-                           stone_mode=True, border_mines=True, swap_sz=True)
-
-
-def build_level13() -> Level:
-    e = MAPS[9]
-    return _build_from_map("9 - The Cascade Vaults Undercroft", e["rows"],
-                           e["start"], e["tokens"], warp=e.get("warp"),
-                           stone_mode=True, border_mines=True,
-                           beacon2=e.get("f2"))
-
-
-ALL_LEVELS = [build_level1, build_level4,
-              build_level6, build_level7, build_level9,
-              build_level10, build_level11, build_level12, build_level13,
-              build_level8]
+ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4, build_level5,
+              build_level6, build_level7, build_level8, build_level9, build_level10, build_level11]
