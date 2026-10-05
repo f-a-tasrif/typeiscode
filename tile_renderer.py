@@ -839,13 +839,10 @@ def draw_void(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False, 
                            fill=VOID_CORE, outline="")
         return
 
-    # 1. Tile base — very dark navy fill, gold border
     canvas.create_rectangle(x, y, x + size, y + size,
                             fill=VOID_BG, outline=VOID_RIM,
                             width=max(1, size // 20))
 
-    # 2. Sunken bevel — black top-left, gold bottom-right
-    #    Inverted vs a normal bevel so the tile reads as a recessed pit
     _bevel(canvas, x, y, size, "#000000", VOID_GLOW,
            depth=max(2, size // 6))
 
@@ -853,8 +850,6 @@ def draw_void(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False, 
     m     = max(2, size // 8)
     outer = max(3, size // 2 - m)
 
-    # 3. Four concentric filled ovals — dark rings simulating depth
-    #    No outlines, no dashes — solid bands only
     for frac, col in (
         (0.92, "#1a0f2e"),
         (0.70, "#130b22"),
@@ -865,20 +860,16 @@ def draw_void(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False, 
         canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
                            fill=col, outline="")
 
-    # 4. Indigo shimmer — purple-blue oval with WARP_INDIGO outline ring
-    #    This is the "bottomless pit glow" seen in the design
     if size >= 16:
         sc = max(2, size // 7)
         canvas.create_oval(cx - sc, cy - sc, cx + sc, cy + sc,
                            fill="#2a1a4a", outline=WARP_INDIGO,
                            width=max(1, size // 28))
 
-    # 5. Black pit centre
     cc = max(1, size // 10)
     canvas.create_oval(cx - cc, cy - cc, cx + cc, cy + cc,
                        fill=VOID_CORE, outline="")
 
-    # 6. Ember dot — tiny crimson point at absolute centre
     if size >= 20:
         e = max(1, cc // 2)
         canvas.create_oval(cx - e, cy - e, cx + e, cy + e,
@@ -938,7 +929,6 @@ def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = Fa
 
     photo = None
     try:
-        # Use frame_col=4 (last frame of opening animation) on row 0 for fully open door
         photo = _door_photo(size, frame_col=4, frame_row=0)
     except Exception:
         photo = None
@@ -1364,17 +1354,12 @@ def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False, 
         canvas.create_image(x + size // 2, y + size // 2,
                             image=photo, anchor="center")
         return
-    # PIL-unavailable fallback.
-    # Design: rounded stone arch silhouette + layered teal vortex ovals
-    # + keystone triangle at crown + glow spill below the arch mouth.
-    # Colors from the design sheet image — teal portal, gold trim, dark arch.
     u = size / 16.0
     def R(rx, ry, rw, rh, col):
         canvas.create_rectangle(
             int(x + rx * u), int(y + ry * u),
             int(x + (rx + rw) * u), int(y + (ry + rh) * u),
             fill=col, outline="")
-    # ── fast path ────────────────────────────────────────────────────
     if fast:
         R(0,  2, 16, 14, "#1c1630")          # arch body
         R(0,  1.8, 16, 0.35, "#c8a84b")      # gold cap line
@@ -1387,8 +1372,6 @@ def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False, 
                            fill="#0c3a4c", outline="#1a7888",
                            width=max(1, size // 20))
         return
-    # ── 1. arch body — dark stone colour from the design ─────────────
-    # The arch is a single dark rounded rectangle covering top 7/8 of tile
     arch_x1 = int(x + 1 * u)
     arch_y1 = int(y + 1 * u)
     arch_x2 = int(x + 15 * u)
@@ -1397,27 +1380,18 @@ def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False, 
     _rounded_rect(canvas, arch_x1, arch_y1, arch_x2, arch_y2,
                   arch_r, fill="#1c1630", outline="#0d0a1a",
                   width=max(1, size // 24))
-    # ── 2. arch highlight — lighter top edge course ───────────────────
     R(0.5, 1.0, 15, 0.5, "#2a2040")
-    # ── 3. gold cap line across the very top ──────────────────────────
     R(0, 1.6, 16, 0.35, "#c8a84b")
-    # ── 4. horizontal mortar lines on arch body ───────────────────────
     for i in range(5):
         R(1.0, 3.5 + i * 2.0, 14, 0.22, "#0d0a1a")
-    # ── 5. thin gold inner-edge strips on left and right ─────────────
     R(2.5, 2.5, 0.3, 12, "#c8a84b")    # left inner gold strip
     R(13.2, 2.5, 0.3, 12, "#c8a84b")   # right inner gold strip
-    # ── 6. keystone triangle at the crown ────────────────────────────
-    # Small teal triangle at top-centre, gold outline
     canvas.create_polygon(
         int(x + 7.5 * u), int(y + 1.6 * u),
         int(x + 8.0 * u), int(y + 2.6 * u),
         int(x + 8.5 * u), int(y + 1.6 * u),
         fill="#1a7888", outline="#c8a84b",
         width=max(1, int(u * 0.5)))
-    # ── 7. portal interior — layered teal vortex ovals ───────────────
-    # Centred inside the arch opening, each ring slightly smaller + brighter
-    # Colors match the teal vortex in the design sheet exactly
     cx = x + size // 2
     cy = y + int(size * 0.60)          # centre of arch opening
     for frac, col in (
@@ -1431,13 +1405,11 @@ def draw_warp(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False, 
         rh = max(1, int(size * 0.40 * frac))
         canvas.create_oval(cx - rw, cy - rh, cx + rw, cy + rh,
                            fill=col, outline="")
-    # ── 8. teal glow rim outline around the portal mouth ─────────────
     rw0 = max(2, int(size * 0.30))
     rh0 = max(2, int(size * 0.40))
     canvas.create_oval(cx - rw0, cy - rh0, cx + rw0, cy + rh0,
                        fill="", outline="#1a7888",
                        width=max(1, size // 20))
-    # ── 9. glow spill — faint oval below arch mouth ───────────────────
     if size >= 20:
         spill_h = max(1, size // 9)
         canvas.create_oval(cx - rw0, cy + rh0,
@@ -1645,8 +1617,6 @@ _portal_photos: dict[int, object] = {}
 
 
 def _load_portal_src():
-    # Disabled: portal.jpeg is too dark and renders transparent.
-    # Fallback programmatic drawing in draw_warp() is used instead.
     global _portal_src
     _portal_src = False
     return None
@@ -1906,7 +1876,6 @@ def _white_keyed_src(path: str):
 
 
 
-# Stone frames from walls_floor.png or Objects.png
 _stone_photos: dict[tuple, object] = {}
 
 def _stone_photo(size: int, frame_col: int = 0, frame_row: int = 20, sheet: str = "walls_floor.png"):
@@ -1934,8 +1903,6 @@ def _stone_photo(size: int, frame_col: int = 0, frame_row: int = 20, sheet: str 
 
 
 
-# Door frames from doors_lever_chest_animation.png (5 cols x 4 rows of doors = 20 frames)
-# Using row 0, col 0 as default closed door frame
 _door_photos: dict[tuple, object] = {}
 
 def _door_photo(size: int, frame_col: int = 0, frame_row: int = 0):

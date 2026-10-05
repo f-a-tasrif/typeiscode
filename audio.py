@@ -7,7 +7,6 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-# MCI-based volume control for playsound backend (Windows only)
 def _mci_set_volume(alias: str, volume: float):
     """Set volume for MCI alias. volume is 0.0-1.0"""
     if sys.platform != "win32":
@@ -16,12 +15,11 @@ def _mci_set_volume(alias: str, volume: float):
         from ctypes import c_buffer, windll
         from sys import getfilesystemencoding
         buf = c_buffer(255)
-        # MCI volume is 0-1000
         vol_int = int(volume * 1000)
         cmd = f'setaudio {alias} volume to {vol_int}'.encode(getfilesystemencoding())
         errorCode = int(windll.winmm.mciSendStringA(cmd, buf, 254, 0))
         if errorCode:
-            pass  # Volume control not supported by this device
+            pass
     except Exception:
         pass
 
@@ -122,7 +120,6 @@ class AudioManager:
             except Exception:
                 pass
         elif self._backend == "playsound":
-            # Volume will be applied on next playback
             pass
 
 
@@ -138,7 +135,6 @@ class AudioManager:
             except Exception:
                 pass
         elif self._backend == "playsound":
-            # Mute will be applied on next playback
             pass
         return muted
 
