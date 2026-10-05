@@ -3,8 +3,43 @@ from __future__ import annotations
 
 import os
 import threading
+import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+
+# MCI-based volume control for playsound backend (Windows only)
+def _mci_set_volume(alias: str, volume: float):
+    """Set volume for MCI alias. volume is 0.0-1.0"""
+    if sys.platform != "win32":
+        return
+    try:
+        from ctypes import c_buffer, windll
+        from sys import getfilesystemencoding
+        buf = c_buffer(255)
+        # MCI volume is 0-1000
+        vol_int = int(volume * 1000)
+        cmd = f'setaudio {alias} volume to {vol_int}'.encode(getfilesystemencoding())
+        errorCode = int(windll.winmm.mciSendStringA(cmd, buf, 254, 0))
+        if errorCode:
+            pass  # Volume control not supported by this device
+    except Exception:
+        pass
+
+def _mci_get_status(alias: str, item: str) -> bytes:
+    """Get MCI status for alias."""
+    if sys.platform != "win32":
+        return b''
+    try:
+        from ctypes import c_buffer, windll
+        from sys import getfilesystemencoding
+        buf = c_buffer(255)
+        cmd = f'status {alias} {item}'.encode(getfilesystemencoding())
+        errorCode = int(windll.winmm.mciSendStringA(cmd, buf, 254, 0))
+        if errorCode:
+            return b''
+        return buf.value
+    except Exception:
+        return b''
 
 
 class AudioManager:
@@ -86,6 +121,9 @@ class AudioManager:
                 pygame.mixer.music.set_volume(applied)
             except Exception:
                 pass
+        elif self._backend == "playsound":
+            # Volume will be applied on next playback
+            pass
 
 
 
@@ -99,10 +137,8 @@ class AudioManager:
                 pygame.mixer.music.set_volume(0.0 if muted else self._volume)
             except Exception:
                 pass
-        if self._backend == "playsound" and muted:
-
-
-
+        elif self._backend == "playsound":
+            # Mute will be applied on next playback
             pass
         return muted
 

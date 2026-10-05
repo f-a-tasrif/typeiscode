@@ -935,6 +935,18 @@ def draw_door_closed(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = 
 
 def draw_door_open(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False, tags=None):
     canvas = _tagged(canvas, tags)
+
+    photo = None
+    try:
+        # Use frame_row=1 for open door variant from sprite sheet
+        photo = _door_photo(size, frame_col=0, frame_row=1)
+    except Exception:
+        photo = None
+    if photo is not None:
+        draw_floor(canvas, x, y, size, fast=fast)
+        canvas.create_image(x + size // 2, y + size // 2,
+                            image=photo, anchor="center")
+        return
     if fast:
         canvas.create_rectangle(x, y, x + size, y + size,
                                 fill="#1a2a1a", outline="#2e4a2e", width=1)
@@ -1845,63 +1857,58 @@ def _white_keyed_src(path: str):
 
 
 
-STONE_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           "assets", "stone.jpeg")
-_stone_src = None
-_stone_photos: dict[int, object] = {}
+# Stone frames from walls_floor.png or Objects.png
+_stone_photos: dict[tuple, object] = {}
 
-
-def _load_stone_src():
-    global _stone_src
-    if _stone_src is not None:
-        return _stone_src or None
-    _stone_src = _white_keyed_src(STONE_IMAGE) or False
-    return _stone_src or None
-
-
-def _stone_photo(size: int):
+def _stone_photo(size: int, frame_col: int = 0, frame_row: int = 20, sheet: str = "walls_floor.png"):
+    """Get stone frame from sprite sheet. Default uses walls_floor.png col 0, row 20."""
     _check_photo_root()
-    key = _quant_size(size)
+    px = _quant_size(size)
+    key = (sheet, frame_col, frame_row, int(px))
     if key in _stone_photos:
         return _stone_photos[key]
-    src = _load_stone_src()
-    if src is None:
+    try:
+        frame = DungeonSheet.frame_image(sheet, frame_col, frame_row)
+        if frame is None:
+            return None
+        side = max(8, int(px))
+        out = frame.copy()
+        if out.size != (side, side):
+            out = out.resize((side, side), _PILImage.NEAREST)
+        photo = _PILImageTk.PhotoImage(out)
+    except Exception:
         return None
-    side = max(8, int(key * 0.92))
-    fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.BILINEAR)
-    photo = _PILImageTk.PhotoImage(fit)
+    if len(_stone_photos) >= 100:
+        _stone_photos.pop(next(iter(_stone_photos)))
     _stone_photos[key] = photo
     return photo
 
 
 
-DOOR_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                          "assets", "door.jpeg")
-_door_src = None
-_door_photos: dict[int, object] = {}
+# Door frames from doors_lever_chest_animation.png (5 cols x 4 rows of doors = 20 frames)
+# Using row 0, col 0 as default closed door frame
+_door_photos: dict[tuple, object] = {}
 
-
-def _load_door_src():
-    global _door_src
-    if _door_src is not None:
-        return _door_src or None
-    _door_src = _white_keyed_src(DOOR_IMAGE) or False
-    return _door_src or None
-
-
-def _door_photo(size: int):
+def _door_photo(size: int, frame_col: int = 0, frame_row: int = 0):
+    """Get door frame from sprite sheet. frame_col 0-4, frame_row 0-3 for door variants."""
     _check_photo_root()
-    key = _quant_size(size)
+    px = _quant_size(size)
+    key = (frame_col, frame_row, int(px))
     if key in _door_photos:
         return _door_photos[key]
-    src = _load_door_src()
-    if src is None:
+    try:
+        frame = DungeonSheet.frame_image("doors_lever_chest_animation.png", frame_col, frame_row)
+        if frame is None:
+            return None
+        side = max(8, int(px))
+        out = frame.copy()
+        if out.size != (side, side):
+            out = out.resize((side, side), _PILImage.NEAREST)
+        photo = _PILImageTk.PhotoImage(out)
+    except Exception:
         return None
-    side = max(8, int(key * 0.92))
-    fit = src.copy()
-    fit.thumbnail((side, side), _PILImage.BILINEAR)
-    photo = _PILImageTk.PhotoImage(fit)
+    if len(_door_photos) >= 100:
+        _door_photos.pop(next(iter(_door_photos)))
     _door_photos[key] = photo
     return photo
 
