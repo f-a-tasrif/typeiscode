@@ -1210,12 +1210,61 @@ def draw_circuit_slot(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool =
                        fill=CIRCUIT_SLOT_BORDER, outline=CIRCUIT_SLOT_BORDER)
 
 
+STONE_TRAP_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "assets", "stone.jpeg")
+_stone_trap_src = None
+_stone_trap_photos: dict[int, object] = {}
+
+
+def _load_stone_trap_src():
+    global _stone_trap_src
+    if _stone_trap_src is not None:
+        return _stone_trap_src or None
+    if not _PIL_AVAILABLE:
+        _stone_trap_src = False
+        return None
+    try:
+        img = _PILImage.open(STONE_TRAP_IMAGE).convert("RGB")
+    except (OSError, FileNotFoundError):
+        _stone_trap_src = False
+        return None
+    gray = img.convert("L")
+    content = gray.point(lambda v: 0 if v > 235 else 255)
+    bbox = content.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+        gray = gray.crop(bbox)
+
+    alpha = gray.point(
+        lambda v: 0 if v >= 245 else (255 if v <= 190 else int((245 - v) * 255 / 55)))
+    img = img.convert("RGBA")
+    img.putalpha(alpha)
+    _stone_trap_src = img
+    return img
+
+
+def _stone_trap_photo(size: int):
+    _check_photo_root()
+    key = _quant_size(size)
+    if key in _stone_trap_photos:
+        return _stone_trap_photos[key]
+    src = _load_stone_trap_src()
+    if src is None:
+        return None
+    side = max(8, int(key * 0.92))
+    fit = src.copy()
+    fit.thumbnail((side, side), _PILImage.BILINEAR)
+    photo = _PILImageTk.PhotoImage(fit)
+    _stone_trap_photos[key] = photo
+    return photo
+
+
 def draw_stone(canvas: tk.Canvas, x: int, y: int, size: int, fast: bool = False, tags=None):
     canvas = _tagged(canvas, tags)
 
     photo = None
     try:
-        photo = _stone_photo(size)
+        photo = _stone_trap_photo(size)
     except Exception:
         photo = None
     if photo is not None:
