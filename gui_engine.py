@@ -84,12 +84,14 @@ LEVEL_HINTS = [
 
 "",
 
+"",
+
+"",
+
 "Access meets a point to let you inside,\n"
 "Add a turn to that place where pathways collide.\n"
 "Two simple pieces, when joined side by side,\n"
 "Reveal what swings open to welcome the ride.\n",
-
-"",
 
 "The shadows fall across the night,\n"
     "And wrap the weary in their might,\n"
@@ -199,6 +201,7 @@ class GUIEngine:
                              min_width=980, min_height=560)
         self.canvas = self.window.create_canvas(bg=BOARD_BG)
         self._build_info_panel()
+        self._sync_mute_button()
 
 
         self.window.on_key_down(self.on_key)
@@ -298,8 +301,10 @@ class GUIEngine:
 
 
     def _on_volume_change(self, val):
+        # Handle both scale command callback (string value) and direct calls (int/float)
         if hasattr(val, "widget"):
             event = val
+            # Only process ButtonRelease and actual value changes, ignore drag motion without click
             if event.type == "Motion" and not (int(getattr(event, "state", 0)) & 0x100):
                 return
             try:
@@ -1645,6 +1650,10 @@ class GUIEngine:
         if key not in ("w", "a", "s", "d"):
             return
 
+
+        # Ignore movement input during goal entry animation (prevents double level advance)
+        if self._goal_entry_job is not None:
+            return
 
         if self.game_completed:
             if self.race is not None:

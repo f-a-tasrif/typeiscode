@@ -222,7 +222,7 @@ def build_level1() -> Level:
 def build_level2() -> Level:
     
     e = MAPS[1]
-    return _build_from_map("Level 2", e["rows"], e["start"], e["tokens"])
+    return _build_from_map("Level 4", e["rows"], e["start"], e["tokens"])
 
 
 def build_level3() -> Level:
@@ -238,8 +238,7 @@ def build_level3() -> Level:
 def build_level4() -> Level:
     
     e = MAPS[3]
-    lvl = _build_from_map("Level 4", e["rows"], e["start"], e["tokens"])
-    _flip_value_block(lvl, e, "False")
+    lvl = _build_from_map("Level 2", e["rows"], e["start"], e["tokens"])
     return lvl
 
 
@@ -280,7 +279,7 @@ def build_level7() -> Level:
 def build_level8() -> Level:
     
     e = MAPS[7]
-    return _build_from_map("Level 8 - The Forge Citadel", e["rows"], e["start"],
+    return _build_from_map("Level 9 - The Forge Citadel", e["rows"], e["start"],
                            e["tokens"], warp=e.get("warp"),
                            stone_mode=True, rec=e.get("rec"),
                            f2=e.get("f2"), border_mines=True)
@@ -289,7 +288,7 @@ def build_level8() -> Level:
 def build_level9() -> Level:
     
     e = MAPS[8]
-    return _build_from_map("Level 9 - Nested Vaults & Timing Window", e["rows"],
+    return _build_from_map("Level 8 - Nested Vaults & Timing Window", e["rows"],
                            e["start"], e["tokens"], warp=e.get("warp"),
                            stone_mode=True, border_mines=True, swap_sz=True)
 
@@ -361,5 +360,5 @@ def build_level11() -> Level:
     return lvl
 
 
-ALL_LEVELS = [build_level1, build_level2, build_level3, build_level4, build_level5,
-              build_level6, build_level7, build_level8, build_level9, build_level10, build_level11]
+ALL_LEVELS = [build_level1, build_level4, build_level3, build_level2, build_level5,
+              build_level6, build_level7, build_level9, build_level8, build_level10, build_level11]

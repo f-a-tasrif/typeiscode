@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import os
@@ -40,6 +39,87 @@ def _mci_get_status(alias: str, item: str) -> bytes:
         return b''
 
 
+def _mci_open_file(path: str, alias: str) -> bool:
+    """Open a media file with MCI and return success."""
+    if sys.platform != "win32":
+        return False
+    try:
+        from ctypes import c_buffer, windll
+        from sys import getfilesystemencoding
+        buf = c_buffer(255)
+        # Close any existing alias first
+        windll.winmm.mciSendStringA(f'close {alias}'.encode(getfilesystemencoding()), buf, 254, 0)
+        # Open the file
+        cmd = f'open "{path}" type mpegvideo alias {alias}'.encode(getfilesystemencoding())
+        errorCode = int(windll.winmm.mciSendStringA(cmd, buf, 254, 0))
+        if errorCode:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _mci_play_loop(alias: str) -> bool:
+    """Start looping playback with MCI."""
+    if sys.platform != "win32":
+        return False
+    try:
+        from ctypes import c_buffer, windll
+        from sys import getfilesystemencoding
+        buf = c_buffer(255)
+        cmd = f'play {alias} repeat'.encode(getfilesystemencoding())
+        errorCode = int(windll.winmm.mciSendStringA(cmd, buf, 254, 0))
+        return errorCode == 0
+    except Exception:
+        return False
+
+
+def _mci_stop(alias: str) -> bool:
+    """Stop MCI playback."""
+    if sys.platform != "win32":
+        return False
+    try:
+        from ctypes import c_buffer, windll
+        from sys import getfilesystemencoding
+        buf = c_buffer(255)
+        cmd = f'stop {alias}'.encode(getfilesystemencoding())
+        errorCode = int(windll.winmm.mciSendStringA(cmd, buf, 254, 0))
+        return errorCode == 0
+    except Exception:
+        return False
+
+
+def _mci_close(alias: str) -> bool:
+    """Close MCI device."""
+    if sys.platform != "win32":
+        return False
+    try:
+        from ctypes import c_buffer, windll
+        from sys import getfilesystemencoding
+        buf = c_buffer(255)
+        cmd = f'close {alias}'.encode(getfilesystemencoding())
+        errorCode = int(windll.winmm.mciSendStringA(cmd, buf, 254, 0))
+        return errorCode == 0
+    except Exception:
+        return False
+
+
+def _mci_play_once(alias: str) -> bool:
+    """Play a sound once with MCI (non-looping, async)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        from ctypes import c_buffer, windll
+        from sys import getfilesystemencoding
+        buf = c_buffer(255)
+        # Play once (async, no wait)
+        cmd = f'play {alias}'.encode(getfilesystemencoding())
+        errorCode = int(windll.winmm.mciSendStringA(cmd, buf, 254, 0))
+        return errorCode == 0
+    except Exception:
+        return False
+
+
 class AudioManager:
 
     def __init__(self, path: str):
@@ -51,6 +131,7 @@ class AudioManager:
         self._lock = threading.Lock()
         self._loop_job: threading.Thread | None = None
         self._sfx: dict[str, object] = {}
+        self._mci_alias = "tic_music"
         self._init_backend()
 
 
@@ -73,6 +154,7 @@ class AudioManager:
         if not os.path.isfile(self.path):
             return
 
+        # Try pygame first (best support)
         try:
             import pygame
             pygame.mixer.init()
@@ -83,6 +165,14 @@ class AudioManager:
         except Exception:
             pass
 
+        # Try MCI on Windows (supports volume)
+        if sys.platform == "win32":
+            if _mci_open_file(self.path, self._mci_alias):
+                _mci_set_volume(self._mci_alias, self._applied_volume())
+                self._backend = "mci"
+                return
+
+        # Fallback to playsound (no volume control)
         try:
             import playsound
             self._backend = "playsound"
@@ -119,9 +209,10 @@ class AudioManager:
                 pygame.mixer.music.set_volume(applied)
             except Exception:
                 pass
+        elif self._backend == "mci":
+            _mci_set_volume(self._mci_alias, applied)
         elif self._backend == "playsound":
             pass
-
 
 
     def toggle_mute(self) -> bool:
@@ -134,6 +225,8 @@ class AudioManager:
                 pygame.mixer.music.set_volume(0.0 if muted else self._volume)
             except Exception:
                 pass
+        elif self._backend == "mci":
+            _mci_set_volume(self._mci_alias, 0.0 if muted else self._volume)
         elif self._backend == "playsound":
             pass
         return muted
@@ -156,6 +249,9 @@ class AudioManager:
             except Exception:
                 self._backend = "silent"
                 return
+        if self._backend == "mci":
+            _mci_play_loop(self._mci_alias)
+            return
         if self._backend == "playsound":
             self._start_playsound_loop()
 
@@ -189,6 +285,9 @@ class AudioManager:
                 pygame.mixer.music.stop()
             except Exception:
                 pass
+        elif self._backend == "mci":
+            _mci_stop(self._mci_alias)
+            _mci_close(self._mci_alias)
 
 
     def play_sfx(self, path: str):
@@ -216,6 +315,13 @@ class AudioManager:
                     return
                 except Exception:
                     pass
+            if self._backend == "mci":
+                # Use a unique alias for each SFX to allow overlapping
+                alias = f"tic_sfx_{hash(full) & 0xFFFF}"
+                if _mci_open_file(full, alias):
+                    _mci_set_volume(alias, self._applied_volume())
+                    _mci_play_once(alias)
+                return
             if self._backend == "playsound":
                 try:
                     from playsound import playsound as _play
