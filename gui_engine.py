@@ -1277,7 +1277,7 @@ class GUIEngine:
                                     and under.__class__.__name__ == "Trap"
                                     and under.is_lethal()):
 
-                                draw_player(cv, px, py, cell, fast=fast, dead=True, death_type="trap", state="idle")
+                                draw_skeleton(cv, px, py, cell, fast=fast)
                             elif under is not None and under.is_lethal():
                                 draw_boom_explosion(cv, px, py, cell, fast=fast)
                             else:
@@ -1321,7 +1321,7 @@ class GUIEngine:
                         draw_ash(cv, px, py, cell, fast=fast)
                     elif (is_player and self.level.dead and cls == "Trap"
                             and occ is not None and occ.is_lethal()):
-                        draw_player(cv, px, py, cell, fast=fast, dead=True, death_type="trap", state="idle")
+                        draw_skeleton(cv, px, py, cell, fast=fast)
                     elif is_player and self.level.dead and self.level.player_invisible:
 
 
